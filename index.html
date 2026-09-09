@@ -42,6 +42,8 @@ h1{font-size:20px;margin:22px 0 6px}
 .row.near .lim{border-color:#ff5a3c}
 .empty{text-align:center;color:#6c7486;padding:56px 0;font-size:19px}
 .row.off{opacity:.5;border-left-color:#2f3542;border-left-style:dashed}
+.row{cursor:pointer}
+.row.sel{outline:2px solid #ffe08a;background:#2a2418}
 .row.off .lim{border-color:#8a8f99}
 .more{text-align:center;color:#6c7486;font-size:15px;padding:8px 0 14px}
 #sec{display:none;background:#1e2634;border:2px solid #3d4d6d;border-radius:16px;padding:16px;margin-bottom:10px}
@@ -93,7 +95,8 @@ h1{font-size:20px;margin:22px 0 6px}
   </div>
 
   <div id="mapwrap" style="position:relative;width:100%;height:300px;overflow:hidden;
-       border-radius:14px;background:#181c25;margin:10px 0 4px">
+       border-radius:14px;background:#181c25;margin:10px 0 4px;touch-action:none;
+       user-select:none;-webkit-user-select:none">
     <div id="tiles" style="position:absolute;inset:0"></div>
     <svg id="ov" style="position:absolute;inset:0;width:100%;height:100%"></svg>
     <div id="attr" style="position:absolute;right:5px;bottom:3px;font-size:9px;color:#6c7486;
@@ -102,6 +105,9 @@ h1{font-size:20px;margin:22px 0 6px}
             font-size:19px;border-radius:9px;background:rgba(30,35,45,.85)">+</button>
     <button id="zout" style="position:absolute;left:6px;top:46px;width:34px;height:34px;padding:0;
             font-size:19px;border-radius:9px;background:rgba(30,35,45,.85)">−</button>
+    <button id="recenter" style="display:none;position:absolute;right:8px;top:8px;padding:10px 14px;
+            font-size:14px;font-weight:600;border-radius:10px;background:#2f6fd0;border-color:#2f6fd0">
+      내 위치</button>
   </div>
 
   <div id="sec">
@@ -1017,6 +1023,17 @@ function estSpeed(lat, lon, t) {
    그래서 기본은 인터넷 없이 그리는 자체 지도다: 지나온 자취, 진행 방향,
    위치 오차 원, 주변 카메라. 필요하면 실제 지도 배경을 켤 수 있다. */
 let zoom = 15, trail = [], lastTileKey = "";
+/* 지도 조작 상태
+   panLat/panLon: 손으로 끌어 옮긴 만큼의 오프셋. 0이면 내 위치를 따라간다.
+   selected:      목록에서 고른 카메라. 지도가 그 지점으로 이동한다. */
+let panLat = 0, panLon = 0, selected = null, lastHits = [], lastFixLL = null;
+
+function mapFollowing() { return panLat === 0 && panLon === 0 && selected === null; }
+function resetView() {
+  panLat = panLon = 0; selected = null;
+  $("recenter").style.display = "none";
+  if (lastFixLL) drawMap(lastFixLL[0], lastFixLL[1], lastFixLL[2], lastFixLL[3], lastHits, lastFixLL[4]);
+}
 const TILE = 256;
 const tileX = (lon, z) => (lon + 180) / 360 * Math.pow(2, z);
 const tileY = (lat, z) => {
@@ -1029,14 +1046,25 @@ function drawMap(lat, lon, hd, acc, hits, turn) {
   const wrap = $("mapwrap");
   if (!$("oMap").checked) { wrap.style.display = "none"; return; }
   wrap.style.display = "block";
-  const W = wrap.clientWidth || 360, H = wrap.clientHeight || 190;
-  const cx = tileX(lon, zoom), cy = tileY(lat, zoom);
+  const W = wrap.clientWidth || 360, H = wrap.clientHeight || 300;
+  lastFixLL = [lat, lon, hd, acc, turn];
+  lastHits = hits;
+
+  // 지도 중심: 선택한 카메라 > 손으로 옮긴 위치 > 내 위치
+  let clat = lat + panLat, clon = lon + panLon;
+  if (selected !== null) {
+    const s = hits.find(h => h.i === selected);
+    if (s) { clat = s.lat; clon = s.lon; }
+  }
+  const cx = tileX(clon, zoom), cy = tileY(clat, zoom);
   const toPx = (la, lo) => [W / 2 + (tileX(lo, zoom) - cx) * TILE,
                             H / 2 + (tileY(la, zoom) - cy) * TILE];
+  const mePx = toPx(lat, lon);
 
   // 타일 배경 (선택)
   const useTiles = $("oTiles").checked;
   $("attr").style.display = useTiles ? "block" : "none";
+  $("recenter").style.display = mapFollowing() ? "none" : "block";
   const key = useTiles ? zoom + ":" + Math.floor(cx) + ":" + Math.floor(cy) : "off";
   if (key !== lastTileKey) {
     lastTileKey = key;
@@ -1065,11 +1093,11 @@ function drawMap(lat, lon, hd, acc, hits, turn) {
   trail.push([lat, lon]);
   if (trail.length > 120) trail.shift();
 
-  const accPx = Math.max(6, (acc || 15) / mPerPx(lat, zoom));
+  const accPx = Math.max(6, (acc || 15) / mPerPx(clat, zoom));
   let s = "";
   if (!useTiles) {
     // 배경이 없을 때 눈금: 100m 격자로 이동감을 준다
-    const g = 100 / mPerPx(lat, zoom);
+    const g = 100 / mPerPx(clat, zoom);
     for (let x = (W / 2) % g; x < W; x += g)
       s += `<line x1="${x.toFixed(0)}" y1="0" x2="${x.toFixed(0)}" y2="${H}" stroke="#232833" stroke-width="1"/>`;
     for (let y = (H / 2) % g; y < H; y += g)
@@ -1109,11 +1137,18 @@ function drawMap(lat, lon, hd, acc, hits, turn) {
     if (q[0] < -24 || q[0] > W + 24 || q[1] < -24 || q[1] > H + 24) continue;
     const on = h.onPath !== false;
     const sec = h.kind === K_SEC_START || h.kind === K_SEC_END;
+    const isSel = h.i === selected;
     const col = on ? (sec ? "#ff9f2e" : "#ff3b30") : "#8a5a58";
-    const r = on ? 8 : 4.5;
+    const r = isSel ? 12 : (on ? 8 : 4.5);
+    if (isSel) {
+      s += `<circle cx="${q[0].toFixed(1)}" cy="${q[1].toFixed(1)}" r="22"
+             fill="none" stroke="#ffe08a" stroke-width="3" opacity=".9"/>`;
+      s += `<circle cx="${q[0].toFixed(1)}" cy="${q[1].toFixed(1)}" r="30"
+             fill="none" stroke="#ffe08a" stroke-width="1.5" opacity=".45"/>`;
+    }
     s += `<circle cx="${q[0].toFixed(1)}" cy="${q[1].toFixed(1)}" r="${r}"
            fill="${col}" opacity="${on ? 1 : .5}" stroke="#111318" stroke-width="2"/>`;
-    if (on && h.d < 3) {
+    if (isSel || (on && h.d < 3)) {
       const t = h.d < 1 ? Math.round(h.d * 1000) + "m" : h.d.toFixed(1) + "km";
       s += `<text x="${(q[0] + 12).toFixed(1)}" y="${(q[1] + 5).toFixed(1)}"
              fill="#ffd9d6" font-size="13" font-weight="600"
@@ -1121,11 +1156,12 @@ function drawMap(lat, lon, hd, acc, hits, turn) {
     }
   }
   const a2 = (hd - 90) * Math.PI / 180;
-  s += `<circle cx="${W / 2}" cy="${H / 2}" r="${accPx.toFixed(0)}" fill="#4a8ad4" opacity=".16"/>`;
-  s += `<circle cx="${W / 2}" cy="${H / 2}" r="9" fill="#fff" stroke="#2f6fd0" stroke-width="3"/>`;
-  s += `<polygon points="${(W / 2 + 20 * Math.cos(a2)).toFixed(1)},${(H / 2 + 20 * Math.sin(a2)).toFixed(1)}
-        ${(W / 2 + 8 * Math.cos(a2 + 2.4)).toFixed(1)},${(H / 2 + 8 * Math.sin(a2 + 2.4)).toFixed(1)}
-        ${(W / 2 + 8 * Math.cos(a2 - 2.4)).toFixed(1)},${(H / 2 + 8 * Math.sin(a2 - 2.4)).toFixed(1)}"
+  const mx = mePx[0], my = mePx[1];
+  s += `<circle cx="${mx.toFixed(1)}" cy="${my.toFixed(1)}" r="${accPx.toFixed(0)}" fill="#4a8ad4" opacity=".16"/>`;
+  s += `<circle cx="${mx.toFixed(1)}" cy="${my.toFixed(1)}" r="9" fill="#fff" stroke="#2f6fd0" stroke-width="3"/>`;
+  s += `<polygon points="${(mx + 20 * Math.cos(a2)).toFixed(1)},${(my + 20 * Math.sin(a2)).toFixed(1)}
+        ${(mx + 8 * Math.cos(a2 + 2.4)).toFixed(1)},${(my + 8 * Math.sin(a2 + 2.4)).toFixed(1)}
+        ${(mx + 8 * Math.cos(a2 - 2.4)).toFixed(1)},${(my + 8 * Math.sin(a2 - 2.4)).toFixed(1)}"
         fill="#2f6fd0"/>`;
   const mtxt = matchedRoad ? "도로 매칭됨" : "경로 추정";
   s += `<text x="8" y="${H - 8}" fill="${matchedRoad ? "#6fb3f0" : "#7d8598"}" font-size="12"
@@ -1133,8 +1169,71 @@ function drawMap(lat, lon, hd, acc, hits, turn) {
   $("ov").innerHTML = s;
 }
 
-$("zin").onclick = () => { zoom = Math.min(18, zoom + 1); lastTileKey = ""; };
-$("zout").onclick = () => { zoom = Math.max(11, zoom - 1); lastTileKey = ""; };
+function redraw() {
+  if (lastFixLL) drawMap(lastFixLL[0], lastFixLL[1], lastFixLL[2], lastFixLL[3], lastHits, lastFixLL[4]);
+}
+$("zin").onclick = () => { zoom = Math.min(18, zoom + 1); lastTileKey = ""; redraw(); };
+$("zout").onclick = () => { zoom = Math.max(11, zoom - 1); lastTileKey = ""; redraw(); };
+$("recenter").onclick = resetView;
+
+/* 손가락으로 지도 끌기 / 두 손가락 확대. 내비처럼 자유롭게 보다가
+   "내 위치" 버튼으로 돌아온다. 조작 중에는 지도가 나를 따라가지 않는다. */
+(function () {
+  const wrap = $("mapwrap");
+  const pts = new Map();
+  let startDist = 0, startZoom = 15, moved = false;
+
+  wrap.addEventListener("pointerdown", e => {
+    if (e.target.tagName === "BUTTON") return;
+    wrap.setPointerCapture(e.pointerId);
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    moved = false;
+    if (pts.size === 2) {
+      const [a, b] = [...pts.values()];
+      startDist = Math.hypot(a.x - b.x, a.y - b.y);
+      startZoom = zoom;
+    }
+  });
+
+  wrap.addEventListener("pointermove", e => {
+    const p = pts.get(e.pointerId);
+    if (!p) return;
+    const W = wrap.clientWidth, H = wrap.clientHeight;
+
+    if (pts.size === 2) {
+      pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      const [a, b] = [...pts.values()];
+      const d = Math.hypot(a.x - b.x, a.y - b.y);
+      if (startDist > 10) {
+        const nz = Math.round(startZoom + Math.log2(d / startDist));
+        const cz = Math.max(11, Math.min(18, nz));
+        if (cz !== zoom) { zoom = cz; lastTileKey = ""; redraw(); }
+      }
+      return;
+    }
+
+    const dx = e.clientX - p.x, dy = e.clientY - p.y;
+    if (Math.abs(dx) + Math.abs(dy) < 2) return;
+    moved = true;
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    const base = lastFixLL ? lastFixLL[0] : 36.5;
+    const m = mPerPx(base, zoom);
+    panLat += (dy * m) / 110540;
+    panLon -= (dx * m) / (111320 * Math.cos(base * Math.PI / 180));
+    selected = null;
+    $("recenter").style.display = "block";
+    redraw();
+  });
+
+  const end = e => {
+    pts.delete(e.pointerId);
+    if (pts.size < 2) startDist = 0;
+  };
+  wrap.addEventListener("pointerup", end);
+  wrap.addEventListener("pointercancel", end);
+  wrap.addEventListener("pointerleave", end);
+})();
 
 /* ---- 화면 그리기 ------------------------------------------------------ */
 let lastSecOver = false;
@@ -1153,16 +1252,26 @@ function render(hits, sec, kph, hd, acc) {
     const extra = Math.max(0, hits.length - MAXROW);
     list.innerHTML = hits.slice(0, MAXROW).map(h => {
       const cls = (h.d < 0.5 ? "near" : (h.d < 1.5 ? "warn" : ""))
-                  + (h.onPath === false ? " off" : "");
+                  + (h.onPath === false ? " off" : "")
+                  + (h.i === selected ? " sel" : "");
       const dist = h.d < 1
         ? `${Math.round(h.d * 1000)}<small>m</small>`
         : `${h.d.toFixed(1)}<small>km</small>`;
       const lim = h.limit > 0 ? `<span class="lim">${h.limit}</span>` : "";
       const road = (CLS_NAME[h.cls] || "") + (h.onPath === false ? " · 옆길일 수 있음" : "");
-      return `<div class="row ${cls}"><span class="dist">${dist}</span>
+      return `<div class="row ${cls}" data-i="${h.i}"><span class="dist">${dist}</span>
         <span class="info">${KIND_NAME[h.kind] || "단속"}<em>${road}</em></span>
         <span style="margin-left:auto">${lim}</span></div>`;
     }).join("") + (extra ? `<div class="more">아래로 ${extra}건 더</div>` : "");
+    for (const el of list.querySelectorAll(".row")) {
+      el.onclick = () => {
+        const i = +el.dataset.i;
+        selected = (selected === i) ? null : i;   // 다시 누르면 해제
+        panLat = panLon = 0;
+        $("recenter").style.display = mapFollowing() ? "none" : "block";
+        if (lastFixLL) drawMap(lastFixLL[0], lastFixLL[1], lastFixLL[2], lastFixLL[3], lastHits, lastFixLL[4]);
+      };
+    }
   }
 
   const box = $("sec");
