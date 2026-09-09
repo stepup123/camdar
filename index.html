@@ -46,6 +46,28 @@ h1{font-size:20px;margin:22px 0 6px}
 .row.sel{outline:2px solid #ffe08a;background:#2a2418}
 .row.off .lim{border-color:#8a8f99}
 .more{text-align:center;color:#6c7486;font-size:15px;padding:8px 0 14px}
+/* 카메라 점멸. 지도를 축소해도 눈에 들어오게 한다.
+   내 경로 위 카메라는 빠르고 크게, 그 외는 느리고 작게 뛴다. */
+@keyframes camPulse{
+  0%{r:9;opacity:1}
+  55%{r:15;opacity:.25}
+  100%{r:9;opacity:1}
+}
+@keyframes camRing{
+  0%{r:10;opacity:.85;stroke-width:3}
+  100%{r:30;opacity:0;stroke-width:1}
+}
+@keyframes camDim{
+  0%{opacity:.45}
+  50%{opacity:1}
+  100%{opacity:.45}
+}
+.pulse-on{animation:camPulse 1.25s ease-in-out infinite}
+.pulse-ring{animation:camRing 1.8s ease-out infinite}
+.pulse-off{animation:camDim 2.4s ease-in-out infinite}
+@media (prefers-reduced-motion:reduce){
+  .pulse-on,.pulse-ring,.pulse-off{animation:none}
+}
 #sec{display:none;background:#1e2634;border:2px solid #3d4d6d;border-radius:16px;padding:16px;margin-bottom:10px}
 #sec.over{background:#2c1c1c;border-color:#7a3535}
 .secbar{height:12px;background:#2c3444;border-radius:6px;overflow:hidden;margin:12px 0 10px}
@@ -75,7 +97,7 @@ h1{font-size:20px;margin:22px 0 6px}
     거치대에 고정하고 출발 전에 시작을 눌러주세요.
   </div>
   <p style="font-size:12px;color:#8b93a6;margin:0 0 10px">
-    버전 <b id="ver">20260909-1304</b>
+    버전 <b id="ver">20260909-1310</b>
     <button id="hardReload" style="font-size:12px;padding:6px 10px;margin-left:8px">캐시 비우기</button>
   </p>
   <p style="font-size:11px;color:#5f6675;line-height:1.6;margin:0 0 14px">
@@ -102,7 +124,11 @@ h1{font-size:20px;margin:22px 0 6px}
        border-radius:14px;background:#181c25;margin:10px 0 4px;touch-action:none;
        user-select:none;-webkit-user-select:none">
     <div id="tiles" style="position:absolute;inset:0"></div>
-    <svg id="ov" style="position:absolute;inset:0;width:100%;height:100%"></svg>
+    <svg id="ovPulse" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none"></svg>
+    <svg id="ov" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none"></svg>
+    <div id="info" style="display:none;position:absolute;left:8px;right:8px;bottom:8px;
+         background:rgba(20,24,32,.94);border:1px solid #3a4356;border-radius:12px;
+         padding:12px 14px;font-size:15px;line-height:1.5"></div>
     <div id="attr" style="position:absolute;right:5px;bottom:3px;font-size:9px;color:#6c7486;
          background:rgba(17,19,24,.6);padding:1px 4px;border-radius:3px;display:none">© OpenStreetMap</div>
     <button id="zin"  style="position:absolute;left:6px;top:6px;width:34px;height:34px;padding:0;
@@ -1053,6 +1079,10 @@ let zoom = 15, trail = [], lastTileKey = "";
    panLat/panLon: 손으로 끌어 옮긴 만큼의 오프셋. 0이면 내 위치를 따라간다.
    selected:      목록에서 고른 카메라. 지도가 그 지점으로 이동한다. */
 let panLat = 0, panLon = 0, selected = null, lastHits = [], lastFixLL = null;
+/* 점멸 레이어는 매 프레임 다시 그리면 애니메이션이 처음으로 되돌아가 끊긴다.
+   그래서 한 번 그려두고, 지도가 움직인 만큼 통째로 평행이동만 시킨다.
+   많이 벗어났거나 카메라 구성이 바뀌면 그때만 다시 그린다. */
+let pulseRef = null, visibleCams = [];
 
 function mapFollowing() { return panLat === 0 && panLon === 0 && selected === null; }
 function resetView() {
@@ -1157,47 +1187,32 @@ function drawMap(lat, lon, hd, acc, hits, turn) {
     s += `<polyline fill="none" stroke="#4a8ad4" stroke-width="3" stroke-linejoin="round" points="` +
       trail.map(p => toPx(p[0], p[1]).map(v => v.toFixed(1)).join(",")).join(" ") + `"/>`;
   }
-  /* 화면에 보이는 범위의 카메라를 전부 그린다.
-     전방 목록에 있는 것(내 경로/옆길)은 그대로 두고,
-     지도를 옮겨 둘러볼 때 그 지역 카메라도 보이게 한다. */
-  const halfLat = (H / 2 + 30) * mPerPx(clat, zoom) / 110540;
-  const halfLon = (W / 2 + 30) * mPerPx(clat, zoom) / (111320 * Math.cos(clat * Math.PI / 180));
-  const inHits = new Set(hits.map(h => h.i));
+  // 화면에 보이는 카메라 모으기 (전방 목록 + 주변 전부)
+  const halfLat = (H / 2 + 40) * mPerPx(clat, zoom) / 110540;
+  const halfLon = (W / 2 + 40) * mPerPx(clat, zoom) / (111320 * Math.cos(clat * Math.PI / 180));
+  const byIdx = new Map();
+  for (const h of hits) byIdx.set(h.i, { ...h, near: true });
   if (db && zoom >= 12) {
-    const around = camsInBox(db, clat - halfLat, clat + halfLat,
-                             clon - halfLon, clon + halfLon, 400);
-    for (const c of around) {
-      if (inHits.has(c.i)) continue;              // 아래 루프에서 진하게 그린다
-      const q = toPx(c.lat, c.lon);
-      const sec2 = c.kind === K_SEC_START || c.kind === K_SEC_END;
-      s += `<circle cx="${q[0].toFixed(1)}" cy="${q[1].toFixed(1)}" r="4"
-             fill="${sec2 ? "#8a6a3a" : "#9c4a46"}" opacity=".7"
-             stroke="#111318" stroke-width="1.5"/>`;
-    }
+    for (const c of camsInBox(db, clat - halfLat, clat + halfLat,
+                              clon - halfLon, clon + halfLon, 400))
+      if (!byIdx.has(c.i)) byIdx.set(c.i, { ...c, onPath: false, near: false });
   }
+  visibleCams = [...byIdx.values()].filter(c => {
+    const q = toPx(c.lat, c.lon);
+    return q[0] > -30 && q[0] < W + 30 && q[1] > -30 && q[1] < H + 30;
+  });
 
+  drawPulse(clat, clon, W, H, toPx);
+
+  // 거리 표시는 움직이는 레이어에 (선택했거나 3km 이내인 것만)
   for (const h of hits) {
+    if (!(h.i === selected || (h.onPath !== false && h.d < 3))) continue;
     const q = toPx(h.lat, h.lon);
     if (q[0] < -24 || q[0] > W + 24 || q[1] < -24 || q[1] > H + 24) continue;
-    const on = h.onPath !== false;
-    const sec = h.kind === K_SEC_START || h.kind === K_SEC_END;
-    const isSel = h.i === selected;
-    const col = on ? (sec ? "#ff9f2e" : "#ff3b30") : "#8a5a58";
-    const r = isSel ? 12 : (on ? 8 : 4.5);
-    if (isSel) {
-      s += `<circle cx="${q[0].toFixed(1)}" cy="${q[1].toFixed(1)}" r="22"
-             fill="none" stroke="#ffe08a" stroke-width="3" opacity=".9"/>`;
-      s += `<circle cx="${q[0].toFixed(1)}" cy="${q[1].toFixed(1)}" r="30"
-             fill="none" stroke="#ffe08a" stroke-width="1.5" opacity=".45"/>`;
-    }
-    s += `<circle cx="${q[0].toFixed(1)}" cy="${q[1].toFixed(1)}" r="${r}"
-           fill="${col}" opacity="${on ? 1 : .5}" stroke="#111318" stroke-width="2"/>`;
-    if (isSel || (on && h.d < 3)) {
-      const t = h.d < 1 ? Math.round(h.d * 1000) + "m" : h.d.toFixed(1) + "km";
-      s += `<text x="${(q[0] + 12).toFixed(1)}" y="${(q[1] + 5).toFixed(1)}"
-             fill="#ffd9d6" font-size="13" font-weight="600"
-             stroke="#111318" stroke-width="3" paint-order="stroke">${t}</text>`;
-    }
+    const t = h.d < 1 ? Math.round(h.d * 1000) + "m" : h.d.toFixed(1) + "km";
+    s += `<text x="${(q[0] + 14).toFixed(1)}" y="${(q[1] + 5).toFixed(1)}"
+           fill="#ffd9d6" font-size="13" font-weight="600"
+           stroke="#111318" stroke-width="3" paint-order="stroke">${t}</text>`;
   }
   const a2 = (hd - 90) * Math.PI / 180;
   const mx = mePx[0], my = mePx[1];
@@ -1211,6 +1226,106 @@ function drawMap(lat, lon, hd, acc, hits, turn) {
   s += `<text x="8" y="${H - 8}" fill="${matchedRoad ? "#6fb3f0" : "#7d8598"}" font-size="12"
          stroke="#111318" stroke-width="3" paint-order="stroke">${mtxt} · 오차 ${Math.round(acc || 0)}m · 배율 ${zoom}</text>`;
   $("ov").innerHTML = s;
+}
+
+function pulseKey() {
+  return zoom + "|" + visibleCams.map(c => c.i + (c.onPath !== false ? "a" : "b")
+                                         + (c.i === selected ? "s" : "")).join(",");
+}
+
+function drawPulse(clat, clon, W, H, toPx) {
+  const g = $("ovPulse");
+  const key = pulseKey();
+  // 지도가 조금 움직인 정도면 평행이동만 한다 (애니메이션 유지)
+  if (pulseRef && pulseRef.key === key) {
+    const dx = (tileX(pulseRef.clon, zoom) - tileX(clon, zoom)) * TILE;
+    const dy = (tileY(pulseRef.clat, zoom) - tileY(clat, zoom)) * TILE;
+    if (Math.abs(dx) < 200 && Math.abs(dy) < 200) {
+      g.firstChild && g.firstChild.setAttribute("transform",
+        `translate(${dx.toFixed(1)},${dy.toFixed(1)})`);
+      return;
+    }
+  }
+  let inner = "";
+  for (const c of visibleCams) {
+    const q = toPx(c.lat, c.lon);
+    const sec = c.kind === K_SEC_START || c.kind === K_SEC_END;
+    const on = c.onPath !== false;
+    const isSel = c.i === selected;
+    const col = on ? (sec ? "#ff9f2e" : "#ff3b30") : "#c25b55";
+    const x = q[0].toFixed(1), y = q[1].toFixed(1);
+    if (on || isSel)
+      inner += `<circle class="pulse-ring" cx="${x}" cy="${y}" r="10"
+                 fill="none" stroke="${isSel ? "#ffe08a" : col}"/>`;
+    inner += `<circle class="${on ? "pulse-on" : "pulse-off"}" cx="${x}" cy="${y}"
+               r="${on ? 9 : 6}" fill="${col}" stroke="#111318" stroke-width="2"/>`;
+    if (isSel)
+      inner += `<circle cx="${x}" cy="${y}" r="20" fill="none"
+                 stroke="#ffe08a" stroke-width="3"/>`;
+  }
+  g.innerHTML = `<g>${inner}</g>`;
+  pulseRef = { key, clat, clon, zoom };
+}
+
+/* 지도에서 카메라를 눌렀을 때 정보 표시 */
+function tapMap(clientX, clientY) {
+  const wrap = $("mapwrap"), rect = wrap.getBoundingClientRect();
+  const px = clientX - rect.left, py = clientY - rect.top;
+  const W = wrap.clientWidth, H = wrap.clientHeight;
+  let clat = (lastFixLL ? lastFixLL[0] : 36.5) + panLat;
+  let clon = (lastFixLL ? lastFixLL[1] : 127.5) + panLon;
+  if (selected !== null) {
+    const s = visibleCams.find(c => c.i === selected);
+    if (s) { clat = s.lat; clon = s.lon; }
+  }
+  const cx = tileX(clon, zoom), cy = tileY(clat, zoom);
+  const toPx = (la, lo) => [W / 2 + (tileX(lo, zoom) - cx) * TILE,
+                            H / 2 + (tileY(la, zoom) - cy) * TILE];
+  let best = null, bd = 30;
+  for (const c of visibleCams) {
+    const q = toPx(c.lat, c.lon);
+    const d = Math.hypot(q[0] - px, q[1] - py);
+    if (d < bd) { bd = d; best = c; }
+  }
+  if (!best) { selected = null; $("info").style.display = "none"; redraw(); return; }
+  selected = (selected === best.i) ? null : best.i;
+  showInfo(selected === null ? null : best);
+  $("recenter").style.display = mapFollowing() ? "none" : "block";
+  redraw();
+}
+
+function showInfo(c) {
+  const box = $("info");
+  if (!c) { box.style.display = "none"; return; }
+  const raw = DATA.cams[c.i];
+  const dist = lastFixLL
+    ? haversine(lastFixLL[0], lastFixLL[1], c.lat, c.lon) : null;
+  const lim = raw[3] > 0
+    ? `<span class="lim" style="width:44px;height:44px;flex:0 0 44px;font-size:18px;border-width:4px">${raw[3]}</span>`
+    : "";
+  const road = { 1: "시내도로", 2: "지방도", 3: "국도", 4: "고속도로" }[raw[5]] || "";
+  const onTxt = c.onPath !== false
+    ? '<span style="color:#ff6b60">내 진행 경로</span>'
+    : '<span style="color:#8b93a6">다른 도로</span>';
+  box.style.display = "block";
+  box.innerHTML =
+    `<div style="display:flex;align-items:center;gap:12px">
+       ${lim}
+       <div style="flex:1">
+         <div style="font-size:18px;font-weight:700">${KIND_NAME[raw[2]] || "단속"}</div>
+         <div style="font-size:13px;color:#9aa3b5;margin-top:2px">
+           ${road}${dist !== null ? " · 직선거리 " + (dist < 1 ? Math.round(dist * 1000) + "m"
+                                                              : dist.toFixed(1) + "km") : ""}
+           · ${onTxt}
+         </div>
+       </div>
+       <button id="infoClose" style="padding:8px 12px;font-size:13px">닫기</button>
+     </div>`;
+  $("infoClose").onclick = () => {
+    selected = null; box.style.display = "none";
+    $("recenter").style.display = mapFollowing() ? "none" : "block";
+    redraw();
+  };
 }
 
 function redraw() {
@@ -1271,8 +1386,10 @@ $("recenter").onclick = resetView;
   });
 
   const end = e => {
+    const wasSingle = pts.size === 1;
     pts.delete(e.pointerId);
     if (pts.size < 2) startDist = 0;
+    if (wasSingle && !moved && e.type === "pointerup") tapMap(e.clientX, e.clientY);
   };
   wrap.addEventListener("pointerup", end);
   wrap.addEventListener("pointercancel", end);
@@ -1312,6 +1429,7 @@ function render(hits, sec, kph, hd, acc) {
         const i = +el.dataset.i;
         selected = (selected === i) ? null : i;   // 다시 누르면 해제
         panLat = panLon = 0;
+        showInfo(selected === null ? null : lastHits.find(x => x.i === i));
         $("recenter").style.display = mapFollowing() ? "none" : "block";
         if (lastFixLL) drawMap(lastFixLL[0], lastFixLL[1], lastFixLL[2], lastFixLL[3], lastHits, lastFixLL[4]);
       };
