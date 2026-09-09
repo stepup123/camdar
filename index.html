@@ -808,7 +808,7 @@ let DATA = null, db = null, alerts = null, turnEst = null, tracker = null, trail
 /* ---- 도로망 타일 -------------------------------------------------------
    전국 도로망은 50MB 라 통째로 못 받는다. 지도 타일처럼 0.05도(약 5.5km)로
    쪼개서 지나는 구역만 받아 캐시한다. 100km 주행에 0.3MB 정도다. */
-const RTILE = 0.05;
+const RTILE = 0.025;   // build_app.py 가 build_roads.py 의 값으로 채운다
 const tileCache = new Map();     // key -> links[] (null = 없음, "load" = 받는 중)
 let roadIx = null, matcher = null, camByLink = new Map(), routeLinks = null;
 let lastTileCenter = "";
