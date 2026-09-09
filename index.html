@@ -1,0 +1,1285 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#111318">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>전방 단속 알림</title>
+<link rel="manifest" href="manifest.json">
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;background:#111318;color:#e8eaf0;
+  font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif}
+body{display:flex;flex-direction:column;padding:env(safe-area-inset-top) 14px env(safe-area-inset-bottom)}
+button{font:inherit;color:inherit;background:#232733;border:1px solid #39404f;
+  border-radius:12px;padding:12px 16px;cursor:pointer}
+button:active{transform:scale(.98)}
+.big{font-size:19px;padding:20px;width:100%;background:#2f6fd0;border-color:#2f6fd0;font-weight:600}
+.stop{background:#8c2f2f;border-color:#8c2f2f}
+h1{font-size:20px;margin:22px 0 6px}
+.sub{color:#9aa3b5;font-size:14px;line-height:1.6;margin:0 0 18px}
+#gate{margin:auto 0;padding-bottom:30px}
+#main{display:none;flex-direction:column;flex:1;min-height:0}
+.hud{display:flex;align-items:baseline;gap:10px;padding:10px 2px 12px;border-bottom:1px solid #262b36}
+.spd{font-size:64px;font-weight:800;line-height:.9;font-variant-numeric:tabular-nums;letter-spacing:-2px}
+.unit{font-size:17px;color:#9aa3b5}
+.meta{margin-left:auto;text-align:right;font-size:14px;color:#8b93a6;line-height:1.5}
+#list{flex:1;overflow-y:auto;padding:12px 0}
+.row{display:flex;align-items:center;gap:14px;padding:18px 16px;margin-bottom:10px;
+  background:#1a1e27;border-radius:16px;border-left:6px solid #3d4552}
+.row.near{border-left-color:#e0603a;background:#2b1c17}
+.row.warn{border-left-color:#e0a93a;background:#241f17}
+.dist{font-size:42px;font-weight:800;min-width:132px;line-height:1;
+  font-variant-numeric:tabular-nums;letter-spacing:-1.5px}
+.dist small{font-size:20px;font-weight:600;margin-left:2px}
+.info{font-size:20px;font-weight:600;color:#dfe5ef;line-height:1.3}
+.info em{display:block;font-size:14px;font-weight:400;font-style:normal;color:#8b93a6;margin-top:3px}
+.lim{display:flex;align-items:center;justify-content:center;
+  border:5px solid #d94a4a;border-radius:50%;width:58px;height:58px;
+  font-size:23px;font-weight:800;background:#fff;color:#111;flex:0 0 58px}
+.row.near .lim{border-color:#ff5a3c}
+.empty{text-align:center;color:#6c7486;padding:56px 0;font-size:19px}
+.row.off{opacity:.5;border-left-color:#2f3542;border-left-style:dashed}
+.row.off .lim{border-color:#8a8f99}
+.more{text-align:center;color:#6c7486;font-size:15px;padding:8px 0 14px}
+#sec{display:none;background:#1e2634;border:2px solid #3d4d6d;border-radius:16px;padding:16px;margin-bottom:10px}
+#sec.over{background:#2c1c1c;border-color:#7a3535}
+.secbar{height:12px;background:#2c3444;border-radius:6px;overflow:hidden;margin:12px 0 10px}
+.secfill{height:100%;background:#4a8ad4;width:0%}
+#sec.over .secfill{background:#d94a4a}
+.foot{display:flex;gap:8px;padding:10px 0 14px}
+.foot button{flex:1;font-size:16px;padding:15px 8px}
+#panel{display:none;background:#171b23;border:1px solid #2a303c;border-radius:12px;
+  padding:14px;margin-bottom:10px;font-size:14px}
+.opt{display:flex;align-items:center;justify-content:space-between;padding:9px 0;
+  border-bottom:1px solid #232733}
+.opt:last-child{border-bottom:0}
+.opt input[type=range]{width:130px}
+.warnbox{background:#2b241a;border:1px solid #55452c;border-radius:10px;padding:12px;
+  font-size:13px;color:#d9c9a8;line-height:1.6;margin-bottom:14px}
+.status{font-size:12px;color:#6c7486;padding:4px 2px 0}
+</style>
+</head>
+<body>
+
+<div id="gate">
+  <h1>전방 단속 알림</h1>
+  <p class="sub">진행 방향 앞쪽에 있는 단속카메라만 미리 알려줍니다.
+  반대 차로 카메라는 걸러냅니다.</p>
+  <div class="warnbox">
+    운전 중에는 화면을 보지 마세요. 음성 안내만 들으시면 됩니다.<br>
+    거치대에 고정하고 출발 전에 시작을 눌러주세요.
+  </div>
+  <p style="font-size:11px;color:#5f6675;line-height:1.6;margin:0 0 14px">
+    단속카메라 정보: 공공데이터포털 전국무인교통단속카메라표준데이터<br>
+    지도 배경: © OpenStreetMap 기여자
+  </p>
+  <button class="big" id="startBtn" disabled>시작</button>
+  <div style="display:flex;gap:8px;margin-top:10px">
+    <button id="diagBtn" style="flex:1">진단</button>
+    <button id="demoBtn" style="flex:1" disabled>모의주행</button>
+  </div>
+  <p class="status" id="gateStatus"></p>
+  <div id="diag" style="display:none;margin-top:14px;background:#171b23;border:1px solid #2a303c;
+    border-radius:12px;padding:14px;font-size:14px;line-height:1.9"></div>
+</div>
+
+<div id="main">
+  <div class="hud">
+    <span class="spd" id="spd">0</span><span class="unit">km/h</span>
+    <span class="meta" id="meta">GPS 대기중</span>
+  </div>
+
+  <div id="mapwrap" style="position:relative;width:100%;height:300px;overflow:hidden;
+       border-radius:14px;background:#181c25;margin:10px 0 4px">
+    <div id="tiles" style="position:absolute;inset:0"></div>
+    <svg id="ov" style="position:absolute;inset:0;width:100%;height:100%"></svg>
+    <div id="attr" style="position:absolute;right:5px;bottom:3px;font-size:9px;color:#6c7486;
+         background:rgba(17,19,24,.6);padding:1px 4px;border-radius:3px;display:none">© OpenStreetMap</div>
+    <button id="zin"  style="position:absolute;left:6px;top:6px;width:34px;height:34px;padding:0;
+            font-size:19px;border-radius:9px;background:rgba(30,35,45,.85)">+</button>
+    <button id="zout" style="position:absolute;left:6px;top:46px;width:34px;height:34px;padding:0;
+            font-size:19px;border-radius:9px;background:rgba(30,35,45,.85)">−</button>
+  </div>
+
+  <div id="sec">
+    <div style="font-size:16px;font-weight:600;color:#aab3c5">구간단속 진행중</div>
+    <div class="secbar"><div class="secfill" id="secfill"></div></div>
+    <div id="sectxt" style="line-height:1.5"></div>
+  </div>
+
+  <div id="list"><div class="empty">전방 이상 없음</div></div>
+
+  <div id="panel">
+    <div class="opt"><span>탐지 거리</span>
+      <span><input type="range" id="oRad" min="3" max="20" step="1" value="10">
+      <b id="oRadV">10km</b></span></div>
+    <div class="opt"><span>음성 안내</span><input type="checkbox" id="oVoice" checked></div>
+    <div class="opt"><span>지도 표시</span><input type="checkbox" id="oMap" checked></div>
+    <div class="opt"><span>지도 배경 (인터넷 사용)</span><input type="checkbox" id="oTiles"></div>
+    <div class="opt"><span>반대 차로 걸러내기</span><input type="checkbox" id="oDir" checked></div>
+    <div class="opt"><span>신호위반 카메라 표시</span><input type="checkbox" id="oSig" checked></div>
+    <div class="opt"><span>신호위반도 음성 안내</span><input type="checkbox" id="oSigVoice"></div>
+    <div class="opt"><span>속도로 도로 자동 판별</span><input type="checkbox" id="oAuto" checked></div>
+    <div class="opt"><span>커브 따라가기</span><input type="checkbox" id="oCurve" checked></div>
+    <div class="opt"><span>도로 매칭 (정밀)</span><input type="checkbox" id="oMatch" checked></div>
+    <div class="opt"><span>화면 항상 켜기</span><input type="checkbox" id="oWake" checked></div>
+  </div>
+
+  <div class="foot">
+    <button id="panelBtn">설정</button>
+    <button id="testBtn">음성 확인</button>
+    <button id="stopBtn" class="stop">종료</button>
+  </div>
+</div>
+
+<script>/* CAMDAR core — 순수 로직. 브라우저와 node 양쪽에서 동일하게 동작한다.
+   DOM 을 건드리지 않으므로 node 로 테스트할 수 있다. */
+
+const R_EARTH = 6371.0088;
+const CELL = 0.05;                 // 공간 인덱스 셀 크기 (위도 0.05도 = 약 5.5km)
+const K_SPEED = 1, K_SIGNAL = 2, K_SEC_START = 3, K_SEC_END = 4, K_ETC = 5;
+const KIND_NAME = { 1: "속도", 2: "신호", 3: "구간단속 시작", 4: "구간단속 끝", 5: "단속" };
+
+const rad = d => d * Math.PI / 180;
+const deg = r => r * 180 / Math.PI;
+
+function haversine(lat1, lon1, lat2, lon2) {
+  const p1 = rad(lat1), p2 = rad(lat2);
+  const dp = p2 - p1, dl = rad(lon2 - lon1);
+  const a = Math.sin(dp / 2) ** 2 + Math.cos(p1) * Math.cos(p2) * Math.sin(dl / 2) ** 2;
+  return 2 * R_EARTH * Math.asin(Math.min(1, Math.sqrt(a)));
+}
+
+function bearing(lat1, lon1, lat2, lon2) {
+  const p1 = rad(lat1), p2 = rad(lat2), dl = rad(lon2 - lon1);
+  const y = Math.sin(dl) * Math.cos(p2);
+  const x = Math.cos(p1) * Math.sin(p2) - Math.sin(p1) * Math.cos(p2) * Math.cos(dl);
+  return (deg(Math.atan2(y, x)) + 360) % 360;
+}
+
+function angDiff(a, b) {
+  return Math.abs(((a - b + 180) % 360 + 360) % 360 - 180);
+}
+
+/* ---- 공간 인덱스 -------------------------------------------------------
+   3만 건에 매번 haversine 을 돌리면 폰에서 버벅인다.
+   위경도를 셀로 쪼개 주변 셀만 훑는다. 후보가 수십 건으로 줄어든다. */
+function buildIndex(cams) {
+  const grid = new Map();
+  for (let i = 0; i < cams.length; i++) {
+    const key = Math.floor(cams[i][0] / 1e5 / CELL) + ":" + Math.floor(cams[i][1] / 1e5 / CELL);
+    let b = grid.get(key);
+    if (!b) grid.set(key, b = []);
+    b.push(i);
+  }
+  return grid;
+}
+
+function nearbyIdx(grid, lat, lon, radiusKm) {
+  const span = Math.ceil(radiusKm / 111 / CELL) + 1;
+  const cy = Math.floor(lat / CELL), cx = Math.floor(lon / CELL);
+  const out = [];
+  for (let dy = -span; dy <= span; dy++)
+    for (let dx = -span; dx <= span; dx++) {
+      const b = grid.get((cy + dy) + ":" + (cx + dx));
+      if (b) out.push(...b);
+    }
+  return out;
+}
+
+/* ---- 전방 탐색 --------------------------------------------------------- */
+/* 진행 직선으로부터의 수직 이탈거리(m). 옆 도로 카메라를 걸러내는 핵심.
+   원뿔만 쓰면 10km 앞에서 폭이 ±5.7km 라 나란한 시내도로가 전부 들어온다. */
+function crossTrackM(d, relDeg) {
+  return Math.abs(d * Math.sin(rad(relDeg))) * 1000;
+}
+
+/* ---- 진행 경로 투영 ----------------------------------------------------
+   "계속 이 길로 직진한다"는 가정을 경로로 그린다.
+   직진 중이면 직선, 커브 중이면 지금 돌고 있는 곡률로 호를 그린다.
+
+   왜 필요한가: 순수 직선으로 회랑을 잡으면 완만한 커브에서 도로 밖으로
+   벗어나 정작 전방 카메라를 놓친다. 반대로 곡률을 끝까지 적용하면
+   경로가 과하게 휘어 엉뚱한 곳을 본다. 그래서 곡률을 거리에 따라 감쇠시킨다.
+
+   turnPerKm: 1km 주행당 방위각 변화량(도). 분기점에서 직진하면 0 에 가깝고,
+   램프로 빠지면 커진다. 즉 직진 가정이 자연히 유지된다. */
+const TURN_CLAMP = 30;      // km당 최대 30도 (반경 약 1.9km, 고속도로 본선 곡률 상한)
+const TURN_HOLD_KM = 3.5;   // 이 거리까지는 현재 곡률 유지, 이후 완만히 감쇠
+const TURN_FLOOR = 1.0;     // 감쇠 없음: 지금 도는 곡률을 끝까지 유지
+
+function projectPath(lat, lon, heading, turnPerKm, horizonKm, stepKm) {
+  stepKm = stepKm || 0.25;
+  const tr = Math.max(-TURN_CLAMP, Math.min(TURN_CLAMP, turnPerKm || 0));
+  const pts = [[lat, lon]];
+  let la = lat, lo = lon, hd = heading, run = 0;
+  const n = Math.ceil(horizonKm / stepKm);
+  for (let i = 0; i < n; i++) {
+    const r = rad(hd);
+    la += (stepKm * Math.cos(r)) / 111.0;
+    lo += (stepKm * Math.sin(r)) / (111.0 * Math.cos(rad(la)));
+    run += stepKm;
+    // 감쇠: 가까운 구간은 현재 곡률을 믿고, 멀어질수록 직선으로 수렴
+    const w = run <= TURN_HOLD_KM ? 1
+            : Math.max(TURN_FLOOR, 1 - (run - TURN_HOLD_KM) / horizonKm);
+    hd = (hd + tr * stepKm * w + 360) % 360;
+    pts.push([la, lo]);
+  }
+  return pts;
+}
+
+/* 경로까지의 최단거리(m)와 경로를 따라간 거리(km)를 함께 구한다.
+   직선거리 대신 경로거리를 쓰면 커브 구간에서 "몇 km 앞"이 실제와 맞는다. */
+function pathDistance(path, lat, lon, stepKm) {
+  stepKm = stepKm || 0.25;
+  let best = 1e9, bestI = 0;
+  for (let i = 0; i < path.length; i++) {
+    const d = haversine(lat, lon, path[i][0], path[i][1]);
+    if (d < best) { best = d; bestI = i; }
+  }
+  return { offM: best * 1000, alongKm: bestI * stepKm };
+}
+
+/* 현재 속도로 "이 카메라가 내가 달리는 도로의 것인가"를 판정한다.
+
+   도로종류 필드로 거르려 했으나 실데이터에서 오등록이 많다.
+   제한 70 이상인데 '시도'로 등록된 카메라가 772건 있고,
+   울산 이예로(제한 80)가 여기 해당한다. 등급만 믿으면 이런 도로가 통째로 사라진다.
+
+   그래서 제한속도를 1차 기준으로 쓴다. 100km/h 로 달리는데 제한 30 카메라가
+   있다면 그건 옆 시내도로다. 반대로 제한 80 카메라는 등급이 뭐로 적혀 있든
+   내가 달릴 수 있는 도로다. */
+const SPEED_MARGIN = 25;
+
+function relevantBySpeed(limit, kph, cls) {
+  if (cls >= 3) return true;                 // 국도·고속국도로 등록된 건 항상 통과
+  if (!limit || limit <= 0) return true;     // 제한속도 미상은 통과 (놓치지 않는 쪽)
+  return limit >= kph - SPEED_MARGIN;
+}
+
+function minClassFor(kph) {
+  if (kph >= 85) return 4;
+  if (kph >= 62) return 3;
+  if (kph >= 40) return 2;
+  return 1;
+}
+
+function findAhead(db, lat, lon, heading, opt) {
+  const o = Object.assign({ radiusKm: 10, coneDeg: 30, dirTol: 70, nearM: 150,
+                            useDir: true, corridorM: 0, minClass: 1, minLimit: 0,
+                            turnPerKm: 0, usePath: true, kph: 0,
+                            corridorPerKm: 55 }, opt);
+  const hits = [];
+  const STEP = 0.25;
+  // "이 길로 계속 간다" 경로. 원뿔 각도도 곡률에 맞춰 넓혀준다.
+  const path = (o.usePath && o.corridorM > 0)
+    ? projectPath(lat, lon, heading, o.turnPerKm, o.radiusKm, STEP) : null;
+  // 경로 투영을 쓸 때 원뿔은 값싼 1차 거름망일 뿐이고, 실제 판정은 회랑이 한다.
+  // 커브에서는 먼 지점이 옆으로 크게 벌어지므로(호 각도의 절반) 넉넉히 열어준다.
+  const coneEff = path
+    ? Math.min(160, o.coneDeg + Math.abs(o.turnPerKm) * o.radiusKm / 2 + 15)
+    : o.coneDeg;
+  for (const i of nearbyIdx(db.grid, lat, lon, o.radiusKm)) {
+    const c = db.cams[i];
+    const clat = c[0] / 1e5, clon = c[1] / 1e5;
+    const d = haversine(lat, lon, clat, clon);
+    if (d > o.radiusKm) continue;
+
+    const veryNear = d * 1000 <= o.nearM;
+    const rel = angDiff(bearing(lat, lon, clat, clon), heading);
+    if (rel > coneEff && !veryNear) continue;
+
+    // 사전 계산된 단속방향. -1 은 판별 불가 -> 통과시킨다
+    if (o.useDir && c[4] >= 0 && !veryNear && angDiff(c[4], heading) > o.dirTol) continue;
+
+    /* 회랑 판정: 탈락시켜 없애는 대신 onPath 플래그로 표시한다.
+       화면에는 전방 10km 를 다 보여주고, 음성 경고만 경로 위 카메라로 제한한다.
+       회랑에서 제거해 버리면 커브 직전이나 GPS 흔들림에 화면이 통째로 비어버린다. */
+    let dist = d, onPath = true, offM = 0;
+    if (!veryNear && o.corridorM > 0) {
+      /* 허용 폭 설계 (실차 테스트로 재조정)
+         가까운 곳: 좁게. 300m 옆 카메라는 명백히 다른 도로다.
+         먼 곳:    넓게. 방위각 1도 오차가 10km 에서 175m 로 벌어지고,
+                   도로 곡률까지 더해지므로 넓히지 않으면 내 도로 것도 탈락한다.
+         이전 설계(200m + 25m/km)는 이게 정반대라 가까운 옆 도로는 통과시키고
+         먼 내 도로는 탈락시켰다. */
+      const allow = along => o.corridorM + along * o.corridorPerKm;
+      if (path) {
+        const p = pathDistance(path, clat, clon, STEP);
+        offM = p.offM;
+        onPath = p.offM <= allow(p.alongKm);
+        if (onPath && p.alongKm > 0) dist = p.alongKm;
+      } else {
+        offM = crossTrackM(d, rel);
+        onPath = offM <= allow(d);
+      }
+      if (o.pathOnly && !onPath) continue;
+    }
+    // 속도 기준 관련성 판정. 근접 예외 없이 항상 적용한다.
+    // (근접 예외를 주면 시내를 통과할 때 옆 도로 카메라가 전부 뚫고 들어온다)
+    if (o.kph > 0 && !relevantBySpeed(c[3], o.kph, c[5] || 1)) continue;
+    if (o.minClass > 1 && (c[5] || 1) < o.minClass) continue;
+    if (o.minLimit > 0 && c[3] > 0 && c[3] < o.minLimit) continue;
+
+    hits.push({ i, lat: clat, lon: clon, kind: c[2], limit: c[3], camBrg: c[4],
+                cls: c[5] || 1, d: dist, straightKm: d, rel, onPath, offM });
+  }
+  hits.sort((a, b) => a.d - b.d);
+  return hits;
+}
+
+/* ---- 경고 관리 ---------------------------------------------------------
+   거리 고정 단계(2km/1km/300m)는 속도에 따라 체감이 완전히 달라진다.
+   100km/h 에서 2km 는 72초 전이지만 50km/h 에서는 144초 전이다.
+   그래서 "몇 초 뒤에 도달하는가"로 바꾼다.
+
+   그리고 두 번째(직전) 경고는 실제로 제한속도를 넘고 있을 때만 울린다.
+   제한 80 구간을 75로 가고 있는데 두 번 알릴 이유가 없다. */
+const LEAD_S = 25;          // 1차 경고: 도달 25초 전
+const FINAL_S = 8;          // 2차 경고: 도달 8초 전 (과속 중일 때만)
+const SEC_LEAD_S = 45;      // 구간단속 시점은 더 일찍
+const REARM = 0.5;
+
+class AlertManager {
+  constructor() { this.fired = new Set(); this.last = new Map(); }
+
+  /* opt.kph      : 현재 속도 (경고 시점 계산에 사용)
+     opt.mute     : 음성에서 제외할 종류 코드 배열 (예: 신호) */
+  check(hits, opt) {
+    const o = opt || {};
+    const kph = Math.max(o.kph || 0, 30);        // 저속에서 너무 코앞이 되지 않게
+    const mute = o.mute || [];
+    const events = [], alive = new Set();
+
+    for (const h of hits) {
+      alive.add(h.i);
+      const prev = this.last.get(h.i);
+      this.last.set(h.i, h.d);
+
+      if (h.onPath === false) continue;          // 경로 밖은 화면에만
+      if (h.kind === K_SEC_END) continue;        // 구간 종점은 알릴 필요 없음
+      if (mute.indexOf(h.kind) >= 0) continue;
+
+      const lead = (h.kind === K_SEC_START ? SEC_LEAD_S : LEAD_S) * kph / 3600;
+      const over = h.limit > 0 && kph > h.limit + 3;
+      const tiers = over ? [lead, FINAL_S * kph / 3600] : [lead];
+
+      for (let ti = 0; ti < tiers.length; ti++) {
+        const t = tiers[ti], slot = h.i + "#" + ti;
+        if (h.d > t + REARM) { this.fired.delete(slot); continue; }
+        if (h.d > t || this.fired.has(slot)) continue;
+        if (prev !== undefined && h.d > prev) continue;   // 멀어지는 중
+        this.fired.add(slot);
+        events.push({ hit: h, tier: t, final: ti === 1, text: msg(h, t, ti === 1) });
+        break;
+      }
+    }
+
+    for (const i of [...this.last.keys()]) if (!alive.has(i)) this.last.delete(i);
+    return events;
+  }
+}
+
+function fmtDist(km) {
+  return km < 1 ? Math.round(km * 100) * 10 + "미터" : (Math.round(km * 10) / 10) + "킬로미터";
+}
+
+function msg(h, tier, final) {
+  const dist = fmtDist(tier);
+  if (h.kind === K_SEC_START) return `${dist} 앞 구간단속 시작, 제한 ${h.limit || ""}`.trim();
+  if (final) return `단속 카메라 ${dist} 앞, 감속하세요`;
+  if (h.kind === K_SIGNAL) return `${dist} 앞 신호 단속`;
+  const lim = h.limit > 0 ? `, 제한 ${h.limit}` : "";
+  return `${dist} 앞 단속 카메라${lim}`;
+}
+
+/* ---- 구간단속 추적 -----------------------------------------------------
+   누적 이동거리로 평균속도를 낸다. 직선거리로 계산하면 커브에서 낮게 나온다. */
+class SectionTracker {
+  constructor(secs, enterM = 250, exitM = 250) {
+    this.secs = secs; this.enterM = enterM; this.exitM = exitM;
+    this.active = null; this.prev = null;
+  }
+
+  update(lat, lon, tMs, heading) {
+    if (this.active && this.prev)
+      this.active.distKm += haversine(this.prev[0], this.prev[1], lat, lon);
+    this.prev = [lat, lon];
+
+    if (this.active) {
+      const s = this.secs[this.active.idx];
+      const dEnd = haversine(lat, lon, s[2] / 1e5, s[3] / 1e5);
+      if (dEnd * 1000 <= this.exitM) {
+        const snap = this.snapshot(tMs, true);
+        this.active = null;
+        return snap;
+      }
+      // 구간을 벗어났는데 종점을 못 만난 경우(다른 길로 이탈) 포기
+      if (this.active.distKm > s[4] / 1000 * 1.6 + 2) { this.active = null; return null; }
+      return this.snapshot(tMs);
+    }
+
+    // 진입 판정: 시점 근처 + 구간 진행방향이 내 진행방향과 일치할 것
+    let best = -1, bestD = 1e9;
+    for (let i = 0; i < this.secs.length; i++) {
+      const s = this.secs[i];
+      const d = haversine(lat, lon, s[0] / 1e5, s[1] / 1e5);
+      if (d * 1000 > this.enterM || d >= bestD) continue;
+      if (heading !== null && heading !== undefined) {
+        const secBrg = bearing(s[0] / 1e5, s[1] / 1e5, s[2] / 1e5, s[3] / 1e5);
+        if (angDiff(secBrg, heading) > 60) continue;   // 반대방향 구간
+      }
+      bestD = d; best = i;
+    }
+    if (best >= 0) {
+      this.active = { idx: best, t0: tMs, distKm: 0 };
+      return this.snapshot(tMs);
+    }
+    return null;
+  }
+
+  snapshot(tMs, finished = false) {
+    const s = this.secs[this.active.idx];
+    const lenKm = s[4] / 1000, lim = s[5];
+    const hrs = Math.max((tMs - this.active.t0) / 3600000, 1e-9);
+    const trav = this.active.distKm;
+    const avg = trav / hrs;
+    const remain = Math.max(lenKm - trav, 0);
+    let projected = null;
+    if (lim > 0 && remain > 0) projected = lenKm / (hrs + remain / lim);
+    return {
+      lenKm, limit: lim, traveled: trav, remain,
+      avg: avg, projected, finished,
+      over: lim > 0 && avg > lim
+    };
+  }
+}
+
+/* ---- 자취 기반 진행방향 -----------------------------------------------
+   GPS 가 주는 순간 진행방향(course)은 ±3도쯤 흔들린다.
+   이 오차는 거리에 비례해 증폭돼서, 10km 앞에서는 520m 옆으로 벌어진다.
+   그러면 내가 달리는 도로의 카메라가 회랑 밖으로 밀려나 안 보인다.
+
+   지나온 자취에서 일정 거리(기본 250m) 뒤 지점과 현재 위치를 이어 방위각을
+   구하면 오차가 크게 줄어든다. 250m 구간에서 위치오차 10m 는 2.3도지만,
+   여러 점을 평균내면 1도 이하로 떨어진다. */
+class TrailHeading {
+  constructor(spanM = 250, keep = 60) {
+    this.spanM = spanM; this.keep = keep;
+    this.pts = []; this.value = null;
+  }
+
+  push(lat, lon, kph, fallback) {
+    const now = [lat, lon];
+    if (!this.pts.length ||
+        haversine(this.pts[this.pts.length - 1][0], this.pts[this.pts.length - 1][1],
+                  lat, lon) * 1000 > 3) {
+      this.pts.push(now);
+      if (this.pts.length > this.keep) this.pts.shift();
+    }
+    if (kph < 8) return this.value !== null ? this.value : (fallback || 0);
+
+    // 현재 위치에서 spanM 이상 떨어진 과거 점들과의 방위각을 모아 평균
+    const cand = [];
+    for (let i = this.pts.length - 2; i >= 0; i--) {
+      const d = haversine(this.pts[i][0], this.pts[i][1], lat, lon) * 1000;
+      if (d >= this.spanM * 0.4) cand.push(bearing(this.pts[i][0], this.pts[i][1], lat, lon));
+      if (d >= this.spanM * 1.5) break;
+    }
+    if (!cand.length) {
+      // 자취가 아직 짧으면 기기가 준 값을 쓴다
+      const f = (fallback === null || fallback === undefined) ? this.value : fallback;
+      if (f !== null && f !== undefined) this.value = f;
+      return this.value || 0;
+    }
+    // 각도 평균은 벡터로 해야 359도와 1도가 180도로 뭉개지지 않는다
+    let sx = 0, sy = 0;
+    for (const b of cand) { sx += Math.cos(rad(b)); sy += Math.sin(rad(b)); }
+    const avg = (deg(Math.atan2(sy, sx)) + 360) % 360;
+    this.value = this.value === null ? avg
+      : (deg(Math.atan2(0.35 * Math.sin(rad(avg)) + 0.65 * Math.sin(rad(this.value)),
+                        0.35 * Math.cos(rad(avg)) + 0.65 * Math.cos(rad(this.value)))) + 360) % 360;
+    return this.value;
+  }
+}
+
+/* ---- 곡률 추정 ---------------------------------------------------------
+   최근 위치 이력에서 "1km 주행당 방위각 변화량"을 구한다.
+   차선 변경 한 번에 경로가 휙 돌지 않도록 평활화하고, 저속에서는 무시한다. */
+class TurnEstimator {
+  constructor(keep = 6) { this.hist = []; this.keep = keep; this.value = 0; }
+
+  push(lat, lon, kph) {
+    if (kph < 25) { this.value *= 0.7; return this.value; }   // 저속은 신뢰 못함
+    this.hist.push([lat, lon]);
+    if (this.hist.length > this.keep) this.hist.shift();
+    if (this.hist.length < 3) return this.value;
+
+    const rates = [];
+    for (let i = 2; i < this.hist.length; i++) {
+      const a = this.hist[i - 2], b = this.hist[i - 1], c = this.hist[i];
+      const d1 = haversine(a[0], a[1], b[0], b[1]);
+      const d2 = haversine(b[0], b[1], c[0], c[1]);
+      if (d1 < 0.01 || d2 < 0.01) continue;
+      const h1 = bearing(a[0], a[1], b[0], b[1]);
+      const h2 = bearing(b[0], b[1], c[0], c[1]);
+      let dh = ((h2 - h1 + 540) % 360) - 180;
+      rates.push(dh / ((d1 + d2) / 2));
+    }
+    if (!rates.length) return this.value;
+    rates.sort((x, y) => x - y);
+    const med = rates[rates.length >> 1];              // 중앙값: 튀는 값 무시
+    this.value = this.value * 0.6 + med * 0.4;         // 평활화
+    return this.value;
+  }
+}
+
+</script>
+<script>/* CAMDAR 맵 매칭 — 내비가 쓰는 방식
+
+   지금까지는 "내 위치에서 진행방향으로 회랑을 그려 그 안의 카메라"를 골랐다.
+   근사치라 방위각 오차와 옆 도로에 취약하다.
+
+   맵 매칭은 다르게 푼다:
+     1) 스냅   : 내 위치를 실제 도로 링크 위에 붙인다 (수직거리 + 방향 일치 + 직전 링크 연속성)
+     2) 전방추적: 그 링크를 따라 앞으로 간다. 분기점에서는 방위각 변화가 가장 작은 쪽 = 직진
+     3) 선별   : 그렇게 만든 링크 목록에 속한 카메라만 고른다
+
+   결과적으로 "옆 도로", "반대 차로", "빠질 램프"가 원천적으로 배제된다.
+   회랑 폭 같은 임의 상수가 필요 없어진다.
+
+   필요 데이터: 표준노드링크 (ITS 국가교통정보센터) 또는 OSM 도로망.
+   링크 형식: [linkId, roadClass, [lat,lon,lat,lon,...], fromNode, toNode, oneway]
+*/
+
+const RM_CELL = 0.02;          // 스냅용 격자 (약 2.2km)
+const SNAP_MAX_M = 60;         // 이보다 멀면 도로 밖으로 본다
+const HEAD_TOL = 55;           // 링크 방향과 진행방향 허용차(도)
+const STICKY_BONUS = 35;       // 직전 링크/연결 링크에 주는 가산점(m 환산)
+
+function rmRad(d) { return d * Math.PI / 180; }
+
+/* ---- 링크 인덱스 ------------------------------------------------------ */
+function buildRoadIndex(links) {
+  const grid = new Map(), byId = new Map(), fromNode = new Map();
+  for (const L of links) {
+    byId.set(L[0], L);
+    if (!fromNode.has(L[3])) fromNode.set(L[3], []);
+    fromNode.get(L[3]).push(L[0]);
+    if (!L[5]) {                       // 양방향이면 반대로도 갈 수 있다
+      if (!fromNode.has(L[4])) fromNode.set(L[4], []);
+      fromNode.get(L[4]).push(L[0]);
+    }
+    const pts = L[2];
+    for (let i = 0; i < pts.length; i += 2) {
+      const key = Math.floor(pts[i] / 1e5 / RM_CELL) + ":" + Math.floor(pts[i + 1] / 1e5 / RM_CELL);
+      let b = grid.get(key);
+      if (!b) grid.set(key, b = new Set());
+      b.add(L[0]);
+    }
+  }
+  return { grid, byId, fromNode, links };
+}
+
+/* 점과 선분 사이의 최단거리(m)와 선분 위 투영 위치(0~1) */
+function segDist(plat, plon, alat, alon, blat, blon) {
+  const kx = 111320 * Math.cos(rmRad(plat)), ky = 110540;
+  const ax = (alon - plon) * kx, ay = (alat - plat) * ky;
+  const bx = (blon - plon) * kx, by = (blat - plat) * ky;
+  const dx = bx - ax, dy = by - ay;
+  const len2 = dx * dx + dy * dy;
+  let t = len2 > 0 ? -(ax * dx + ay * dy) / len2 : 0;
+  t = Math.max(0, Math.min(1, t));
+  const cxp = ax + dx * t, cyp = ay + dy * t;
+  return { d: Math.hypot(cxp, cyp), t };
+}
+
+/* 링크 위에서 가장 가까운 지점: 거리(m), 진행 방위각, 링크 시작부터의 거리(m) */
+function projectOnLink(link, lat, lon) {
+  const p = link[2];
+  let best = { d: Infinity, brg: 0, along: 0 }, acc = 0;
+  for (let i = 0; i + 3 < p.length; i += 2) {
+    const a = [p[i] / 1e5, p[i + 1] / 1e5], b = [p[i + 2] / 1e5, p[i + 3] / 1e5];
+    const segLen = Math.hypot((b[1] - a[1]) * 111320 * Math.cos(rmRad(a[0])),
+                              (b[0] - a[0]) * 110540);
+    const r = segDist(lat, lon, a[0], a[1], b[0], b[1]);
+    if (r.d < best.d) {
+      const dy = b[0] - a[0], dx = (b[1] - a[1]) * Math.cos(rmRad(a[0]));
+      best = { d: r.d, brg: (Math.atan2(dx, dy) * 180 / Math.PI + 360) % 360,
+               along: acc + segLen * r.t, seg: i / 2 };
+    }
+    acc += segLen;
+  }
+  return best;
+}
+
+function linkLength(link) {
+  const p = link[2]; let s = 0;
+  for (let i = 0; i + 3 < p.length; i += 2)
+    s += Math.hypot((p[i + 3] - p[i + 1]) / 1e5 * 111320 * Math.cos(rmRad(p[i] / 1e5)),
+                    (p[i + 2] - p[i]) / 1e5 * 110540);
+  return s;
+}
+
+function angDelta(a, b) { return Math.abs(((a - b + 540) % 360) - 180); }
+
+/* ---- 스냅 ------------------------------------------------------------- */
+class RoadMatcher {
+  constructor(index) {
+    this.ix = index;
+    this.current = null;        // 현재 붙어 있는 linkId
+    this.confidence = 0;
+  }
+
+  candidates(lat, lon) {
+    const out = new Set();
+    const cy = Math.floor(lat / RM_CELL), cx = Math.floor(lon / RM_CELL);
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const b = this.ix.grid.get((cy + dy) + ":" + (cx + dx));
+      if (b) for (const id of b) out.add(id);
+    }
+    return out;
+  }
+
+  /* 점수가 낮을수록 좋다. 수직거리에 방향 불일치 벌점과 연속성 가산점을 더한다.
+     연속성이 중요한 이유: 고가도로와 그 아래 도로, 본선과 나란한 램프처럼
+     좌표만으로는 구분이 안 되는 경우가 실제로 많다. */
+  match(lat, lon, heading) {
+    let best = null;
+    const prev = this.current;
+    const prevLink = prev !== null ? this.ix.byId.get(prev) : null;
+    const connected = new Set();
+    if (prevLink) {
+      connected.add(prev);
+      for (const n of [prevLink[3], prevLink[4]])
+        for (const id of (this.ix.fromNode.get(n) || [])) connected.add(id);
+    }
+
+    for (const id of this.candidates(lat, lon)) {
+      const L = this.ix.byId.get(id);
+      const pr = projectOnLink(L, lat, lon);
+      if (pr.d > SNAP_MAX_M * 2) continue;
+
+      let fwd = pr.brg;
+      let head = heading === null || heading === undefined ? fwd : heading;
+      let delta = angDelta(fwd, head);
+      let reversed = false;
+      if (!L[5] && delta > 90) { delta = 180 - delta; reversed = true; }  // 양방향은 역주행 방향도 허용
+      if (delta > HEAD_TOL) continue;
+
+      let score = pr.d + delta * 1.2;
+      if (connected.has(id)) score -= STICKY_BONUS;
+      if (id === prev) score -= 15;
+
+      if (!best || score < best.score)
+        best = { id, score, dist: pr.d, delta, along: pr.along,
+                 brg: reversed ? (pr.brg + 180) % 360 : pr.brg, reversed, link: L };
+    }
+
+    if (!best || best.dist > SNAP_MAX_M) {
+      this.confidence = Math.max(0, this.confidence - 0.34);
+      if (this.confidence <= 0) this.current = null;
+      return null;
+    }
+    this.current = best.id;
+    this.confidence = Math.min(1, this.confidence + 0.5);
+    return best;
+  }
+
+  /* ---- 전방 추적 -----------------------------------------------------
+     분기점에서 방위각 변화가 가장 작은 링크를 고른다 = "계속 직진한다"는 가정.
+     같은 도로명이 이어지면 우선한다(본선 유지). */
+  forward(snap, maxKm) {
+    if (!snap) return { links: [], path: [] };
+    const out = [], path = [];
+    let link = snap.link, reversed = snap.reversed;
+    let remain = maxKm * 1000 - (reversed ? snap.along : linkLength(link) - snap.along);
+    let guard = 0;
+
+    const pushGeom = (L, rev, fromAlong) => {
+      const p = L[2], seq = [];
+      for (let i = 0; i < p.length; i += 2) seq.push([p[i] / 1e5, p[i + 1] / 1e5]);
+      if (rev) seq.reverse();
+      for (const q of seq) path.push(q);
+    };
+
+    out.push(link[0]);
+    pushGeom(link, reversed, snap.along);
+
+    while (remain > 0 && guard++ < 60) {
+      const endNode = reversed ? link[3] : link[4];
+      const outBrg = endBearing(link, reversed);
+      let pick = null;
+      for (const id of (this.ix.fromNode.get(endNode) || [])) {
+        if (id === link[0]) continue;
+        const L = this.ix.byId.get(id);
+        const rev = L[3] !== endNode;              // 반대편에서 진입하면 뒤집어 진행
+        if (rev && L[5]) continue;                  // 일방통행 역주행 불가
+        const d = angDelta(startBearing(L, rev), outBrg);
+        if (d > 75) continue;                       // 거의 유턴이면 제외
+        let sc = d;
+        if (L[1] === link[1]) sc -= 12;             // 같은 등급이면 본선일 확률이 높다
+        if (!pick || sc < pick.sc) pick = { id, L, rev, sc };
+      }
+      if (!pick) break;
+      link = pick.L; reversed = pick.rev;
+      out.push(link[0]);
+      pushGeom(link, reversed, 0);
+      remain -= linkLength(link);
+    }
+    return { links: out, path };
+  }
+}
+
+function startBearing(L, rev) {
+  const p = L[2];
+  const a = rev ? [p[p.length - 2], p[p.length - 1]] : [p[0], p[1]];
+  const b = rev ? [p[p.length - 4], p[p.length - 3]] : [p[2], p[3]];
+  return segBearing(a, b);
+}
+function endBearing(L, rev) {
+  const p = L[2];
+  const a = rev ? [p[2], p[3]] : [p[p.length - 4], p[p.length - 3]];
+  const b = rev ? [p[0], p[1]] : [p[p.length - 2], p[p.length - 1]];
+  return segBearing(a, b);
+}
+function segBearing(a, b) {
+  const dy = (b[0] - a[0]) / 1e5, dx = (b[1] - a[1]) / 1e5 * Math.cos(rmRad(a[0] / 1e5));
+  return (Math.atan2(dx, dy) * 180 / Math.PI + 360) % 360;
+}
+
+/* ---- 카메라 선별 ------------------------------------------------------
+   빌드 시점에 각 카메라를 가장 가까운 링크에 붙여둔다(camera[6] = linkId).
+   그러면 실행 중에는 "전방 링크 목록에 포함되는가"만 보면 된다. 계산이 거의 없다. */
+function camsOnRoute(cams, camByLink, routeLinks) {
+  const out = [];
+  for (const id of routeLinks) {
+    const arr = camByLink.get(id);
+    if (arr) for (const i of arr) out.push(i);
+  }
+  return out;
+}
+
+function snapCamerasToLinks(cams, index, maxM = 40) {
+  const byLink = new Map();
+  let matched = 0;
+  for (let i = 0; i < cams.length; i++) {
+    const lat = cams[i][0] / 1e5, lon = cams[i][1] / 1e5;
+    let best = null;
+    const cy = Math.floor(lat / RM_CELL), cx = Math.floor(lon / RM_CELL);
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const b = index.grid.get((cy + dy) + ":" + (cx + dx));
+      if (!b) continue;
+      for (const id of b) {
+        const pr = projectOnLink(index.byId.get(id), lat, lon);
+        if (!best || pr.d < best.d) best = { id, d: pr.d, brg: pr.brg };
+      }
+    }
+    if (best && best.d <= maxM) {
+      if (!byLink.has(best.id)) byLink.set(best.id, []);
+      byLink.get(best.id).push(i);
+      cams[i][6] = best.id;
+      matched++;
+    } else {
+      cams[i][6] = -1;
+    }
+  }
+  return { byLink, matched };
+}
+
+</script>
+<script>
+const $ = id => document.getElementById(id);
+const CLS_NAME = { 1: "시내", 2: "지방도", 3: "국도", 4: "고속도로" };
+
+/* 데이터는 앱과 분리해 data.json 으로 받는다.
+   월 1회 데이터만 교체하면 앱은 그대로 두고 갱신된다. */
+let DATA = null, db = null, alerts = null, turnEst = null, tracker = null, trailHd = null;
+
+/* ---- 도로망 타일 -------------------------------------------------------
+   전국 도로망은 50MB 라 통째로 못 받는다. 지도 타일처럼 0.05도(약 5.5km)로
+   쪼개서 지나는 구역만 받아 캐시한다. 100km 주행에 0.3MB 정도다. */
+const RTILE = 0.05;
+const tileCache = new Map();     // key -> links[] (null = 없음, "load" = 받는 중)
+let roadIx = null, matcher = null, camByLink = new Map(), routeLinks = null;
+let lastTileCenter = "";
+
+/* 주변 3x3 만 받으면 전방 추적이 로드 범위를 벗어난다.
+   진행 방향으로 탐지거리만큼 미리 받아둔다. 타일이 작아 부담이 적다. */
+async function ensureTiles(lat, lon, hd, aheadKm) {
+  const ty = Math.floor(lat / RTILE), tx = Math.floor(lon / RTILE);
+  const center = ty + "_" + tx + "_" + Math.round((hd || 0) / 30);
+  if (center === lastTileCenter) return;
+  lastTileCenter = center;
+
+  const set = new Set();
+  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++)
+    set.add((ty + dy) + "_" + (tx + dx));
+
+  // 진행 방향 1km 간격으로 앞쪽 타일 확보 (좌우 1칸 여유 포함)
+  const r = (hd || 0) * Math.PI / 180;
+  for (let d = 1; d <= (aheadKm || 10); d++) {
+    const la = lat + (d * Math.cos(r)) / 111.0;
+    const lo = lon + (d * Math.sin(r)) / (111.0 * Math.cos(lat * Math.PI / 180));
+    const py = Math.floor(la / RTILE), px = Math.floor(lo / RTILE);
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++)
+      set.add((py + dy) + "_" + (px + dx));
+  }
+  const wants = [...set];
+
+  if (tileCache.size > 900) {           // 오래된 타일부터 버린다
+    let n = 0;
+    for (const k of tileCache.keys()) { if (n++ > 300) break; tileCache.delete(k); }
+  }
+  await Promise.all(wants.map(async k => {
+    if (tileCache.has(k)) return;
+    tileCache.set(k, "load");
+    try {
+      const r = await fetch("roads/" + k + ".json");
+      tileCache.set(k, r.ok ? await r.json() : null);
+    } catch (e) { tileCache.set(k, null); }
+  }));
+
+  // 인접 9칸을 합쳐 인덱스를 다시 만든다
+  const seen = new Set(), links = [];
+  for (const k of wants) {
+    const v = tileCache.get(k);
+    if (!v || v === "load") continue;
+    for (const l of v) {
+      if (seen.has(l[0])) continue;
+      seen.add(l[0]);
+      links.push([l[0], l[1], l[2], l[3], l[4], 0]);
+    }
+  }
+  if (!links.length) { roadIx = null; matcher = null; return; }
+  roadIx = buildRoadIndex(links);
+  const prev = matcher ? matcher.current : null;
+  matcher = new RoadMatcher(roadIx);
+  if (prev !== null) matcher.current = prev;
+
+  // 이 구역 카메라를 링크별로 묶어둔다 (빌드 때 미리 붙여놓은 linkId 사용)
+  camByLink = new Map();
+  for (let i = 0; i < DATA.cams.length; i++) {
+    const id = DATA.cams[i][6];
+    if (!id || id < 0 || !seen.has(id)) continue;
+    if (!camByLink.has(id)) camByLink.set(id, []);
+    camByLink.get(id).push(i);
+  }
+}
+
+async function loadData() {
+  const st = $("gateStatus");
+  st.textContent = "카메라 데이터 불러오는 중…";
+  try {
+    const r = await fetch("data.json", { cache: "no-cache" });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    DATA = await r.json();
+  } catch (e) {
+    st.innerHTML = "데이터를 불러오지 못했습니다.<br>" +
+      (location.protocol === "file:"
+        ? "파일을 직접 열면 안 됩니다. 웹 주소로 여세요."
+        : "인터넷 연결을 확인하고 새로고침하세요. (" + e.message + ")");
+    return false;
+  }
+  db = { cams: DATA.cams, grid: buildIndex(DATA.cams) };
+  alerts = new AlertManager();
+  turnEst = new TurnEstimator();
+  trailHd = new TrailHeading();
+  tracker = new SectionTracker(DATA.secs);
+  st.innerHTML = `카메라 ${DATA.cams.length.toLocaleString()}건 · 구간단속 ${DATA.secs.length}개` +
+    (DATA.built ? `<br>데이터 기준 ${DATA.built}` : "");
+  $("startBtn").disabled = false;
+  $("demoBtn").disabled = false;
+  return true;
+}
+
+let watchId = null, wakeLock = null, voiceOn = true;
+let lastHeading = 0, lastFix = null, lastSpeak = 0, lastTurn = 0, matchedRoad = null;
+
+/* ---- 음성 ------------------------------------------------------------
+   iOS 는 사용자 조작 없이는 speechSynthesis 를 막는다.
+   그래서 시작 버튼에서 빈 문장을 한 번 재생해 잠금을 푼다. */
+function primeVoice() {
+  try {
+    const u = new SpeechSynthesisUtterance(" ");
+    u.volume = 0; speechSynthesis.speak(u);
+  } catch (e) {}
+}
+function speak(text) {
+  if (!voiceOn || !("speechSynthesis" in window)) return;
+  const now = Date.now();
+  if (now - lastSpeak < 2500) return;      // 연속 발화 방지
+  lastSpeak = now;
+  try {
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = "ko-KR"; u.rate = 1.05;
+    speechSynthesis.speak(u);
+  } catch (e) {}
+}
+
+/* ---- 화면 유지 -------------------------------------------------------- */
+async function keepAwake(on) {
+  try {
+    if (on && "wakeLock" in navigator) {
+      wakeLock = await navigator.wakeLock.request("screen");
+      wakeLock.addEventListener("release", () => { wakeLock = null; });
+    } else if (!on && wakeLock) { await wakeLock.release(); wakeLock = null; }
+  } catch (e) {}
+}
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && watchId !== null && $("oWake").checked)
+    keepAwake(true);
+});
+
+/* ---- 위치 처리 -------------------------------------------------------- */
+function onFix(pos) {
+  const c = pos.coords;
+  const lat = c.latitude, lon = c.longitude;
+  const kph = (c.speed != null && c.speed >= 0) ? c.speed * 3.6 : estSpeed(lat, lon, pos.timestamp);
+
+  /* 진행방향은 지나온 자취에서 뽑는다.
+     기기가 주는 순간 방위각은 ±3~4도 흔들리는데, 그 오차가 거리에 비례해
+     증폭돼서 10km 앞에서는 500m 옆으로 벌어진다. 그러면 내가 달리는 도로의
+     카메라가 회랑 밖으로 밀려나 코앞에서야 뜬다.
+     자취 250m 로 방위각을 내면 오차가 0.5도 아래로 떨어진다. */
+  const devHd = (c.heading != null && !isNaN(c.heading)) ? c.heading : null;
+  let hd = trailHd.push(lat, lon, kph, devHd);
+  if (hd === null || hd === undefined) hd = lastHeading;
+  if (kph >= 5) lastHeading = hd; else hd = lastHeading;
+  lastFix = [lat, lon, pos.timestamp];
+
+  const radius = +$("oRad").value;
+  // 속도로 현재 도로 등급을 추정해 옆 시내도로 카메라를 걸러낸다.
+  // 이게 없으면 고속도로 주행 중 스쿨존 카메라까지 알려서 경고가 8배로 늘어난다.
+  // 현재 속도로 "내가 달리는 도로의 카메라인가"를 판정한다.
+  // 도로종류 필드는 오등록이 많아(제한 80인데 '시도'로 등록된 게 772건) 쓰지 않는다.
+  const relKph = $("oAuto").checked ? kph : 0;
+  // "이 길로 계속 간다"는 가정. 직진 중이면 직선, 커브 중이면 그 곡률로 앞을 본다.
+  // 분기점에서 직진하면 램프 쪽 카메라는 경로에서 벗어나 자동으로 빠진다.
+  const turn = $("oCurve").checked ? turnEst.push(lat, lon, kph) : 0;
+  let hits = findAhead(db, lat, lon, hd, {
+    radiusKm: radius, coneDeg: 32, useDir: $("oDir").checked,
+    corridorM: 70, corridorPerKm: 55, kph: relKph, turnPerKm: turn
+  });
+
+  /* 맵 매칭: 내 위치를 실제 도로에 붙이고 그 도로를 따라간다.
+     성공하면 "내 도로 위 카메라"가 확정되므로 회랑 근사보다 훨씬 정확하다.
+     도로 데이터가 없는 구역이면 기존 회랑 방식으로 자동 폴백한다. */
+  matchedRoad = null;
+  if ($("oMatch").checked) {
+    ensureTiles(lat, lon, hd, radius);
+    if (matcher) {
+      const snap = matcher.match(lat, lon, hd);
+      if (snap) {
+        const fw = matcher.forward(snap, radius);
+        routeLinks = new Set(fw.links);
+        matchedRoad = { snap, path: fw.path };
+        const onRoad = new Set();
+        for (const id of fw.links)
+          for (const i of (camByLink.get(id) || [])) onRoad.add(i);
+        for (const h of hits) {
+          const lk = DATA.cams[h.i][6];
+          if (lk > 0) h.onPath = onRoad.has(h.i);   // 링크가 있으면 링크 판정이 우선
+          h.matched = lk > 0;
+        }
+      } else { routeLinks = null; }
+    }
+  }
+  lastTurn = turn;
+  if (!$("oSig").checked) hits = hits.filter(h => h.kind !== K_SIGNAL);
+
+  // 경로 위 카메라만 발화. 신호위반은 기본적으로 화면에만 표시한다
+  // (시내 교차로마다 있어서 음성으로 다 알리면 100km당 36회까지 올라간다)
+  const mute = $("oSigVoice").checked ? [] : [K_SIGNAL];
+  for (const e of alerts.check(hits, { kph, mute })) speak(e.text);
+
+  const sec = tracker.update(lat, lon, pos.timestamp, hd);
+  render(hits, sec, kph, hd, c.accuracy);
+  drawMap(lat, lon, hd, c.accuracy, hits, turn);
+}
+
+let spdHist = [];
+function estSpeed(lat, lon, t) {
+  if (!lastFix) return 0;
+  const dt = (t - lastFix[2]) / 1000;
+  if (dt <= 0.2) return spdHist.length ? spdHist[spdHist.length - 1] : 0;
+  const v = haversine(lastFix[0], lastFix[1], lat, lon) / dt * 3600;
+  spdHist.push(v); if (spdHist.length > 3) spdHist.shift();
+  return spdHist.reduce((a, b) => a + b, 0) / spdHist.length;
+}
+
+/* ---- 미니 지도 --------------------------------------------------------
+   목적은 길찾기가 아니라 "GPS 가 내 위치를 제대로 잡고 있나" 확인이다.
+   그래서 기본은 인터넷 없이 그리는 자체 지도다: 지나온 자취, 진행 방향,
+   위치 오차 원, 주변 카메라. 필요하면 실제 지도 배경을 켤 수 있다. */
+let zoom = 15, trail = [], lastTileKey = "";
+const TILE = 256;
+const tileX = (lon, z) => (lon + 180) / 360 * Math.pow(2, z);
+const tileY = (lat, z) => {
+  const r = lat * Math.PI / 180;
+  return (1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * Math.pow(2, z);
+};
+const mPerPx = (lat, z) => 156543.03392 * Math.cos(lat * Math.PI / 180) / Math.pow(2, z);
+
+function drawMap(lat, lon, hd, acc, hits, turn) {
+  const wrap = $("mapwrap");
+  if (!$("oMap").checked) { wrap.style.display = "none"; return; }
+  wrap.style.display = "block";
+  const W = wrap.clientWidth || 360, H = wrap.clientHeight || 190;
+  const cx = tileX(lon, zoom), cy = tileY(lat, zoom);
+  const toPx = (la, lo) => [W / 2 + (tileX(lo, zoom) - cx) * TILE,
+                            H / 2 + (tileY(la, zoom) - cy) * TILE];
+
+  // 타일 배경 (선택)
+  const useTiles = $("oTiles").checked;
+  $("attr").style.display = useTiles ? "block" : "none";
+  const key = useTiles ? zoom + ":" + Math.floor(cx) + ":" + Math.floor(cy) : "off";
+  if (key !== lastTileKey) {
+    lastTileKey = key;
+    if (!useTiles) { $("tiles").innerHTML = ""; }
+    else {
+      let html = "";
+      const n = Math.pow(2, zoom);
+      for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
+        const tx = Math.floor(cx) + dx, ty = Math.floor(cy) + dy;
+        if (ty < 0 || ty >= n) continue;
+        html += `<img src="https://tile.openstreetmap.org/${zoom}/${(tx % n + n) % n}/${ty}.png"
+          data-tx="${tx}" data-ty="${ty}" style="position:absolute;width:${TILE}px;height:${TILE}px;
+          opacity:.72" onerror="this.style.display='none'">`;
+      }
+      $("tiles").innerHTML = html;
+    }
+  }
+  if (useTiles) {
+    for (const img of $("tiles").children) {
+      img.style.left = (W / 2 + (+img.dataset.tx - cx) * TILE) + "px";
+      img.style.top = (H / 2 + (+img.dataset.ty - cy) * TILE) + "px";
+    }
+  }
+
+  // 자취
+  trail.push([lat, lon]);
+  if (trail.length > 120) trail.shift();
+
+  const accPx = Math.max(6, (acc || 15) / mPerPx(lat, zoom));
+  let s = "";
+  if (!useTiles) {
+    // 배경이 없을 때 눈금: 100m 격자로 이동감을 준다
+    const g = 100 / mPerPx(lat, zoom);
+    for (let x = (W / 2) % g; x < W; x += g)
+      s += `<line x1="${x.toFixed(0)}" y1="0" x2="${x.toFixed(0)}" y2="${H}" stroke="#232833" stroke-width="1"/>`;
+    for (let y = (H / 2) % g; y < H; y += g)
+      s += `<line x1="0" y1="${y.toFixed(0)}" x2="${W}" y2="${y.toFixed(0)}" stroke="#232833" stroke-width="1"/>`;
+  }
+  /* 앱이 "이 길로 간다"고 판단한 경로와 그 허용 폭을 그린다.
+     이게 실제 도로와 어긋나면 왜 엉뚱한 카메라가 뜨는지 눈으로 알 수 있다. */
+  const horizon = Math.min(+$("oRad").value, mPerPx(lat, zoom) * Math.max(W, H) / 1000 * 1.6);
+  const fwd = projectPath(lat, lon, hd, turn || 0, Math.max(horizon, 0.6), 0.25);
+  const edge = (sign) => fwd.map((p, j) => {
+    const nh = j < fwd.length - 1 ? bearing(p[0], p[1], fwd[j + 1][0], fwd[j + 1][1]) : hd;
+    const w = (70 + j * 0.25 * 55) / 111000;      // 회랑 허용 폭(도 단위)
+    return [p[0] + sign * w * Math.cos((nh + 90) * Math.PI / 180) * -1,
+            p[1] + sign * w * Math.sin((nh + 90) * Math.PI / 180) / Math.cos(lat * Math.PI / 180)];
+  });
+  const band = edge(1).map(p => toPx(p[0], p[1])).concat(edge(-1).reverse().map(p => toPx(p[0], p[1])));
+  if (!matchedRoad)
+    s += `<polygon points="${band.map(q => q[0].toFixed(1) + "," + q[1].toFixed(1)).join(" ")}"
+           fill="#2f6fd0" opacity=".14"/>`;
+  if (matchedRoad && matchedRoad.path && matchedRoad.path.length > 1) {
+    // 도로 매칭 성공: 실제 도로 형상을 그린다 (추정 경로가 아니라 진짜 길)
+    s += `<polyline fill="none" stroke="#4ea3f5" stroke-width="5" stroke-linejoin="round"
+           stroke-linecap="round" opacity=".85" points="` +
+      matchedRoad.path.map(p => toPx(p[0], p[1]).map(v => v.toFixed(1)).join(",")).join(" ") + `"/>`;
+  } else {
+    s += `<polyline fill="none" stroke="#5aa9ff" stroke-width="2" stroke-dasharray="6 5" points="` +
+      fwd.map(p => toPx(p[0], p[1]).map(v => v.toFixed(1)).join(",")).join(" ") + `"/>`;
+  }
+
+  if (trail.length > 1) {
+    s += `<polyline fill="none" stroke="#4a8ad4" stroke-width="3" stroke-linejoin="round" points="` +
+      trail.map(p => toPx(p[0], p[1]).map(v => v.toFixed(1)).join(",")).join(" ") + `"/>`;
+  }
+  /* 카메라는 빨간 점. 내 경로 위의 것은 크고 진하게, 옆길은 작고 흐리게. */
+  for (const h of hits) {
+    const q = toPx(h.lat, h.lon);
+    if (q[0] < -24 || q[0] > W + 24 || q[1] < -24 || q[1] > H + 24) continue;
+    const on = h.onPath !== false;
+    const sec = h.kind === K_SEC_START || h.kind === K_SEC_END;
+    const col = on ? (sec ? "#ff9f2e" : "#ff3b30") : "#8a5a58";
+    const r = on ? 8 : 4.5;
+    s += `<circle cx="${q[0].toFixed(1)}" cy="${q[1].toFixed(1)}" r="${r}"
+           fill="${col}" opacity="${on ? 1 : .5}" stroke="#111318" stroke-width="2"/>`;
+    if (on && h.d < 3) {
+      const t = h.d < 1 ? Math.round(h.d * 1000) + "m" : h.d.toFixed(1) + "km";
+      s += `<text x="${(q[0] + 12).toFixed(1)}" y="${(q[1] + 5).toFixed(1)}"
+             fill="#ffd9d6" font-size="13" font-weight="600"
+             stroke="#111318" stroke-width="3" paint-order="stroke">${t}</text>`;
+    }
+  }
+  const a2 = (hd - 90) * Math.PI / 180;
+  s += `<circle cx="${W / 2}" cy="${H / 2}" r="${accPx.toFixed(0)}" fill="#4a8ad4" opacity=".16"/>`;
+  s += `<circle cx="${W / 2}" cy="${H / 2}" r="9" fill="#fff" stroke="#2f6fd0" stroke-width="3"/>`;
+  s += `<polygon points="${(W / 2 + 20 * Math.cos(a2)).toFixed(1)},${(H / 2 + 20 * Math.sin(a2)).toFixed(1)}
+        ${(W / 2 + 8 * Math.cos(a2 + 2.4)).toFixed(1)},${(H / 2 + 8 * Math.sin(a2 + 2.4)).toFixed(1)}
+        ${(W / 2 + 8 * Math.cos(a2 - 2.4)).toFixed(1)},${(H / 2 + 8 * Math.sin(a2 - 2.4)).toFixed(1)}"
+        fill="#2f6fd0"/>`;
+  const mtxt = matchedRoad ? "도로 매칭됨" : "경로 추정";
+  s += `<text x="8" y="${H - 8}" fill="${matchedRoad ? "#6fb3f0" : "#7d8598"}" font-size="12"
+         stroke="#111318" stroke-width="3" paint-order="stroke">${mtxt} · 오차 ${Math.round(acc || 0)}m · 배율 ${zoom}</text>`;
+  $("ov").innerHTML = s;
+}
+
+$("zin").onclick = () => { zoom = Math.min(18, zoom + 1); lastTileKey = ""; };
+$("zout").onclick = () => { zoom = Math.max(11, zoom - 1); lastTileKey = ""; };
+
+/* ---- 화면 그리기 ------------------------------------------------------ */
+let lastSecOver = false;
+function render(hits, sec, kph, hd, acc) {
+  $("spd").textContent = Math.round(kph);
+  const curve = Math.abs(lastTurn) < 4 ? "직진" : (lastTurn > 0 ? "우커브" : "좌커브");
+  $("meta").innerHTML = `${Math.round(hd)}° · ${curve} · 오차 ${Math.round(acc || 0)}m<br>` +
+    `${hits.filter(h => h.onPath !== false).length}/${hits.length}건`;
+
+  const list = $("list");
+  if (!hits.length) {
+    list.innerHTML = '<div class="empty">전방 이상 없음</div>';
+  } else {
+    // 탐지 거리 안의 카메라를 보여준다. 시내에서는 수십 건이 되므로 상한을 둔다.
+    const MAXROW = 8;
+    const extra = Math.max(0, hits.length - MAXROW);
+    list.innerHTML = hits.slice(0, MAXROW).map(h => {
+      const cls = (h.d < 0.5 ? "near" : (h.d < 1.5 ? "warn" : ""))
+                  + (h.onPath === false ? " off" : "");
+      const dist = h.d < 1
+        ? `${Math.round(h.d * 1000)}<small>m</small>`
+        : `${h.d.toFixed(1)}<small>km</small>`;
+      const lim = h.limit > 0 ? `<span class="lim">${h.limit}</span>` : "";
+      const road = (CLS_NAME[h.cls] || "") + (h.onPath === false ? " · 옆길일 수 있음" : "");
+      return `<div class="row ${cls}"><span class="dist">${dist}</span>
+        <span class="info">${KIND_NAME[h.kind] || "단속"}<em>${road}</em></span>
+        <span style="margin-left:auto">${lim}</span></div>`;
+    }).join("") + (extra ? `<div class="more">아래로 ${extra}건 더</div>` : "");
+  }
+
+  const box = $("sec");
+  if (sec && !sec.finished) {
+    box.style.display = "block";
+    box.classList.toggle("over", sec.over);
+    $("secfill").style.width = Math.min(100, sec.traveled / sec.lenKm * 100).toFixed(0) + "%";
+    const proj = sec.projected ? `이대로 가면 최종 평균 ${Math.round(sec.projected)}` : "";
+    $("sectxt").innerHTML =
+      `<span style="font-size:16px;color:#9aa3b5">${sec.traveled.toFixed(1)} / ${sec.lenKm.toFixed(1)}km</span><br>
+       <span style="font-size:15px;color:#9aa3b5">평균</span>
+       <b style="font-size:40px;font-weight:800;letter-spacing:-1px">${Math.round(sec.avg)}</b>
+       ${sec.limit ? `<span style="font-size:19px;color:#9aa3b5"> / ${sec.limit}</span>` : ""}
+       ${proj ? `<div style="font-size:15px;color:#9aa3b5;margin-top:4px">${proj}</div>` : ""}`;
+    if (sec.over && !lastSecOver) speak(`구간 평균 ${Math.round(sec.avg)}, 제한 초과`);
+    lastSecOver = sec.over;
+  } else {
+    box.style.display = "none"; lastSecOver = false;
+  }
+}
+
+/* ---- 시작 / 종료 ------------------------------------------------------ */
+/* ---- 진단: 폰에서 무엇이 되고 안 되는지 한 번에 확인 ---------------- */
+function line(okv, label, detail) {
+  const c = okv === true ? "#5ec27e" : (okv === null ? "#e0a93a" : "#e06a5a");
+  const m = okv === true ? "OK" : (okv === null ? "확인필요" : "안됨");
+  return `<div><span style="color:${c};font-weight:600">${m}</span> · ${label}` +
+         (detail ? `<br><span style="color:#7d8598;font-size:12px">${detail}</span>` : "") + `</div>`;
+}
+$("diagBtn").onclick = async () => {
+  const box = $("diag");
+  box.style.display = "block";
+  const https = location.protocol === "https:" || location.hostname === "localhost";
+  const rows = [];
+  rows.push(line(https, "보안 연결(https)",
+    https ? location.hostname : "파일을 직접 열면 GPS가 안 됩니다. 웹 주소로 여세요"));
+  rows.push(line(!!navigator.geolocation, "위치 기능"));
+  rows.push(line("speechSynthesis" in window, "음성 합성"));
+  const vs = ("speechSynthesis" in window) ? speechSynthesis.getVoices() : [];
+  const ko = vs.filter(v => (v.lang || "").toLowerCase().startsWith("ko"));
+  rows.push(line(ko.length ? true : null, `한국어 음성 ${ko.length}개`,
+    ko.length ? ko.slice(0, 2).map(v => v.name).join(", ")
+              : "목록이 비어도 실제로는 나올 수 있습니다. 음성 확인 버튼으로 테스트하세요"));
+  rows.push(line("wakeLock" in navigator ? true : null, "화면 항상 켜기",
+    "wakeLock" in navigator ? "" : "미지원 기기입니다. 설정에서 화면 자동잠금을 늘려주세요"));
+  rows.push(line(!!DATA && DATA.cams.length > 20000,
+    DATA ? `카메라 데이터 ${DATA.cams.length.toLocaleString()}건` : "카메라 데이터 없음",
+    DATA ? `구간단속 ${DATA.secs.length}개 · 기준 ${DATA.built || "미상"}` : "새로고침 해보세요"));
+  box.innerHTML = rows.join("");
+
+  if (https && navigator.geolocation) {
+    box.innerHTML += line(null, "GPS 신호 확인중…");
+    navigator.geolocation.getCurrentPosition(p => {
+      box.innerHTML = rows.join("") + line(true, "GPS 수신",
+        `오차 ${Math.round(p.coords.accuracy)}m` +
+        (p.coords.accuracy > 50 ? " · 실내입니다. 밖에서 다시 확인하세요" : ""));
+    }, e => {
+      box.innerHTML = rows.join("") + line(false, "GPS 수신 실패", e.message);
+    }, { enableHighAccuracy: true, timeout: 15000 });
+  }
+};
+
+/* ---- 모의주행: 차 없이 화면과 음성을 검증 --------------------------- */
+const DEMO_ROUTE = [[35.460645,129.21761],[35.463156,129.218679],[35.465667,129.219749],[35.468177,129.220818],[35.470688,129.221887],[35.473199,129.222957],[35.47571,129.224026],[35.477501,129.224464],[35.479292,129.224902],[35.481083,129.22534],[35.482874,129.225778],[35.484665,129.226216],[35.486456,129.226654],[35.488587,129.227455],[35.490719,129.228256],[35.49285,129.229058],[35.494981,129.229859],[35.497113,129.23066],[35.499244,129.231461],[35.501917,129.23644],[35.50459,129.241419],[35.507262,129.246398],[35.509935,129.251376],[35.512608,129.256355],[35.515281,129.261334],[35.521132,129.266287],[35.526982,129.271239],[35.532832,129.276192],[35.538683,129.281145],[35.544534,129.286097],[35.550384,129.29105],[35.552801,129.291168],[35.555219,129.291285],[35.557636,129.291403],[35.560053,129.29152],[35.562471,129.291638],[35.564888,129.291755],[35.572996,129.294973],[35.581103,129.298191],[35.589211,129.301408],[35.597319,129.304626],[35.605426,129.307844],[35.613534,129.311062],[35.616644,129.312364],[35.619753,129.313665],[35.622863,129.314967],[35.625973,129.316269],[35.629082,129.31757],[35.632192,129.318872],[35.632528,129.319018],[35.632864,129.319164],[35.6332,129.319311],[35.633536,129.319457],[35.633872,129.319603],[35.634208,129.319749],[35.635756,129.319938],[35.637303,129.320126],[35.638851,129.320314],[35.640398,129.320503],[35.641945,129.320691],[35.643493,129.32088],[35.644957,129.321451],[35.646421,129.322022],[35.647886,129.322593],[35.64935,129.323164],[35.650814,129.323735],[35.652278,129.324306]];
+let demoTimer = null, demoI = 0;
+function demoTick() {
+  const n = DEMO_ROUTE.length;
+  if (demoI >= n - 1) { stopDemo(); return; }
+  const f = demoI % 1, i = Math.floor(demoI);
+  const a = DEMO_ROUTE[i], b = DEMO_ROUTE[Math.min(i + 1, n - 1)];
+  const lat = a[0] + (b[0] - a[0]) * f, lon = a[1] + (b[1] - a[1]) * f;
+  onFix({ coords: { latitude: lat, longitude: lon, speed: 80 / 3.6,
+                    heading: null, accuracy: 5 }, timestamp: Date.now() });
+  demoI += 0.12;
+}
+function stopDemo() {
+  clearInterval(demoTimer); demoTimer = null; demoI = 0;
+  $("demoBtn").textContent = "모의주행";
+}
+$("demoBtn").onclick = () => {
+  if (demoTimer) { stopDemo(); $("main").style.display = "none"; $("gate").style.display = "block"; return; }
+  primeVoice();
+  $("demoBtn").textContent = "모의주행 중지";
+  $("gate").style.display = "none"; $("main").style.display = "flex";
+  demoTimer = setInterval(demoTick, 500);
+};
+
+$("startBtn").onclick = () => {
+  if (!navigator.geolocation) { $("gateStatus").textContent = "이 브라우저는 위치 기능을 지원하지 않습니다."; return; }
+  primeVoice();
+  $("gateStatus").textContent = "위치 권한을 허용해 주세요…";
+  watchId = navigator.geolocation.watchPosition(onFix, err => {
+    $("gateStatus").textContent = "위치 오류: " + err.message +
+      (location.protocol !== "https:" ? " (https 주소로 열어야 합니다)" : "");
+  }, { enableHighAccuracy: true, maximumAge: 1000, timeout: 20000 });
+  if ($("oWake").checked) keepAwake(true);
+  $("gate").style.display = "none";
+  $("main").style.display = "flex";
+};
+$("stopBtn").onclick = () => {
+  if (demoTimer) stopDemo();
+  if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+  watchId = null; keepAwake(false);
+  $("main").style.display = "none"; $("gate").style.display = "block";
+  $("gateStatus").textContent = "";
+};
+$("panelBtn").onclick = () => {
+  const p = $("panel"); p.style.display = p.style.display === "block" ? "none" : "block";
+};
+$("testBtn").onclick = () => { lastSpeak = 0; speak("음성 안내 정상입니다"); };
+$("oRad").oninput = () => { $("oRadV").textContent = $("oRad").value + "km"; };
+$("oVoice").onchange = () => { voiceOn = $("oVoice").checked; };
+$("oWake").onchange = () => keepAwake($("oWake").checked);
+
+if ("serviceWorker" in navigator)
+  navigator.serviceWorker.register("sw.js").catch(() => {});
+loadData();
+</script>
+</body>
+</html>

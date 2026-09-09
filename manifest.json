@@ -1,0 +1,9 @@
+{
+  "name": "전방 단속 알림",
+  "short_name": "단속알림",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#111318",
+  "theme_color": "#111318"
+}
