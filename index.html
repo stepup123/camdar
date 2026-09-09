@@ -124,7 +124,7 @@ h1{font-size:20px;margin:22px 0 6px}
       <b id="oRadV">10km</b></span></div>
     <div class="opt"><span>음성 안내</span><input type="checkbox" id="oVoice" checked></div>
     <div class="opt"><span>지도 표시</span><input type="checkbox" id="oMap" checked></div>
-    <div class="opt"><span>지도 배경 (인터넷 사용)</span><input type="checkbox" id="oTiles"></div>
+    <div class="opt"><span>지도 배경 (인터넷 사용)</span><input type="checkbox" id="oTiles" checked></div>
     <div class="opt"><span>반대 차로 걸러내기</span><input type="checkbox" id="oDir" checked></div>
     <div class="opt"><span>신호위반 카메라 표시</span><input type="checkbox" id="oSig" checked></div>
     <div class="opt"><span>신호위반도 음성 안내</span><input type="checkbox" id="oSigVoice"></div>
@@ -193,6 +193,28 @@ function nearbyIdx(grid, lat, lon, radiusKm) {
       const b = grid.get((cy + dy) + ":" + (cx + dx));
       if (b) out.push(...b);
     }
+  return out;
+}
+
+/* 화면에 보이는 범위의 카메라를 전부 찾는다.
+   전방 목록과 별개다. 지도를 옮겨 둘러볼 때 그 지역에 뭐가 있는지 보여준다. */
+function camsInBox(db, latMin, latMax, lonMin, lonMax, limit) {
+  const out = [];
+  const y0 = Math.floor(latMin / CELL), y1 = Math.floor(latMax / CELL);
+  const x0 = Math.floor(lonMin / CELL), x1 = Math.floor(lonMax / CELL);
+  for (let y = y0; y <= y1; y++) {
+    for (let x = x0; x <= x1; x++) {
+      const b = db.grid.get(y + ":" + x);
+      if (!b) continue;
+      for (const i of b) {
+        const c = db.cams[i];
+        const la = c[0] / 1e5, lo = c[1] / 1e5;
+        if (la < latMin || la > latMax || lo < lonMin || lo > lonMax) continue;
+        out.push({ i, lat: la, lon: lo, kind: c[2], limit: c[3], cls: c[5] || 1 });
+        if (limit && out.length >= limit) return out;
+      }
+    }
+  }
   return out;
 }
 
@@ -1131,7 +1153,25 @@ function drawMap(lat, lon, hd, acc, hits, turn) {
     s += `<polyline fill="none" stroke="#4a8ad4" stroke-width="3" stroke-linejoin="round" points="` +
       trail.map(p => toPx(p[0], p[1]).map(v => v.toFixed(1)).join(",")).join(" ") + `"/>`;
   }
-  /* 카메라는 빨간 점. 내 경로 위의 것은 크고 진하게, 옆길은 작고 흐리게. */
+  /* 화면에 보이는 범위의 카메라를 전부 그린다.
+     전방 목록에 있는 것(내 경로/옆길)은 그대로 두고,
+     지도를 옮겨 둘러볼 때 그 지역 카메라도 보이게 한다. */
+  const halfLat = (H / 2 + 30) * mPerPx(clat, zoom) / 110540;
+  const halfLon = (W / 2 + 30) * mPerPx(clat, zoom) / (111320 * Math.cos(clat * Math.PI / 180));
+  const inHits = new Set(hits.map(h => h.i));
+  if (db && zoom >= 12) {
+    const around = camsInBox(db, clat - halfLat, clat + halfLat,
+                             clon - halfLon, clon + halfLon, 400);
+    for (const c of around) {
+      if (inHits.has(c.i)) continue;              // 아래 루프에서 진하게 그린다
+      const q = toPx(c.lat, c.lon);
+      const sec2 = c.kind === K_SEC_START || c.kind === K_SEC_END;
+      s += `<circle cx="${q[0].toFixed(1)}" cy="${q[1].toFixed(1)}" r="4"
+             fill="${sec2 ? "#8a6a3a" : "#9c4a46"}" opacity=".7"
+             stroke="#111318" stroke-width="1.5"/>`;
+    }
+  }
+
   for (const h of hits) {
     const q = toPx(h.lat, h.lon);
     if (q[0] < -24 || q[0] > W + 24 || q[1] < -24 || q[1] > H + 24) continue;
@@ -1163,7 +1203,7 @@ function drawMap(lat, lon, hd, acc, hits, turn) {
         ${(mx + 8 * Math.cos(a2 + 2.4)).toFixed(1)},${(my + 8 * Math.sin(a2 + 2.4)).toFixed(1)}
         ${(mx + 8 * Math.cos(a2 - 2.4)).toFixed(1)},${(my + 8 * Math.sin(a2 - 2.4)).toFixed(1)}"
         fill="#2f6fd0"/>`;
-  const mtxt = matchedRoad ? "도로 매칭됨" : "경로 추정";
+  const mtxt = mapFollowing() ? (matchedRoad ? "도로 매칭됨" : "경로 추정") : "지도 둘러보는 중";
   s += `<text x="8" y="${H - 8}" fill="${matchedRoad ? "#6fb3f0" : "#7d8598"}" font-size="12"
          stroke="#111318" stroke-width="3" paint-order="stroke">${mtxt} · 오차 ${Math.round(acc || 0)}m · 배율 ${zoom}</text>`;
   $("ov").innerHTML = s;
