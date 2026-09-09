@@ -74,6 +74,10 @@ h1{font-size:20px;margin:22px 0 6px}
     운전 중에는 화면을 보지 마세요. 음성 안내만 들으시면 됩니다.<br>
     거치대에 고정하고 출발 전에 시작을 눌러주세요.
   </div>
+  <p style="font-size:12px;color:#8b93a6;margin:0 0 10px">
+    버전 <b id="ver">20260909-1304</b>
+    <button id="hardReload" style="font-size:12px;padding:6px 10px;margin-left:8px">캐시 비우기</button>
+  </p>
   <p style="font-size:11px;color:#5f6675;line-height:1.6;margin:0 0 14px">
     단속카메라 정보: 공공데이터포털 전국무인교통단속카메라표준데이터<br>
     지도 배경: © OpenStreetMap 기여자
@@ -1341,6 +1345,20 @@ function line(okv, label, detail) {
   return `<div><span style="color:${c};font-weight:600">${m}</span> · ${label}` +
          (detail ? `<br><span style="color:#7d8598;font-size:12px">${detail}</span>` : "") + `</div>`;
 }
+/* 옛 버전이 서비스워커에 남아 화면을 가로채는 일이 잦다.
+   등록을 해제하고 캐시를 통째로 비운 뒤 새로 받는다. */
+$("hardReload").onclick = async () => {
+  $("gateStatus").textContent = "캐시 비우는 중…";
+  try {
+    if ("serviceWorker" in navigator) {
+      const rs = await navigator.serviceWorker.getRegistrations();
+      for (const r of rs) await r.unregister();
+    }
+    if (window.caches) for (const k of await caches.keys()) await caches.delete(k);
+  } catch (e) {}
+  location.replace(location.pathname + "?v=" + Date.now());
+};
+
 $("diagBtn").onclick = async () => {
   const box = $("diag");
   box.style.display = "block";
@@ -1357,6 +1375,9 @@ $("diagBtn").onclick = async () => {
               : "목록이 비어도 실제로는 나올 수 있습니다. 음성 확인 버튼으로 테스트하세요"));
   rows.push(line("wakeLock" in navigator ? true : null, "화면 항상 켜기",
     "wakeLock" in navigator ? "" : "미지원 기기입니다. 설정에서 화면 자동잠금을 늘려주세요"));
+  rows.push(line(true, "앱 버전 " + $("ver").textContent,
+    "지도 배경 " + ($("oTiles").checked ? "켜짐" : "꺼짐") +
+    " · 도로 매칭 " + ($("oMatch").checked ? "켜짐" : "꺼짐")));
   rows.push(line(!!DATA && DATA.cams.length > 20000,
     DATA ? `카메라 데이터 ${DATA.cams.length.toLocaleString()}건` : "카메라 데이터 없음",
     DATA ? `구간단속 ${DATA.secs.length}개 · 기준 ${DATA.built || "미상"}` : "새로고침 해보세요"));

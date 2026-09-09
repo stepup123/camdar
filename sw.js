@@ -1,4 +1,4 @@
-const C='camdar-v3';
+const C='camdar-20260909-1304';
 self.addEventListener('install',e=>{
   e.waitUntil(caches.open(C).then(c=>c.addAll(['./','./index.html','./manifest.json','./data.json'])).then(()=>self.skipWaiting()));
 });
